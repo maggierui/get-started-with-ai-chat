@@ -109,6 +109,7 @@ async def chat_stream_handler(
         if search_index_manager is not None:
             context = await search_index_manager.search(chat_request)
             if context:
+                logger.info(f"Retrieved context chunks:\n{context}")
                 prompt_messages = PromptTemplate.from_string(
                     'You are a helpful assistant that answers some questions '
                     'with the help of some context data.\n\nHere is '
