@@ -85,7 +85,8 @@ class SearchIndexManager:
         
         sources = []
         context_chunks = []
-        async for idx, result in enumerate(response):
+        idx = 0
+        async for result in response:
             context_chunks.append(result['chunk'])
             sources.append({
                 'rank': idx + 1,
@@ -93,6 +94,7 @@ class SearchIndexManager:
                 'chunk_id': result.get('chunk_id', ''),
                 'content': result['chunk'][:200] + '...' if len(result['chunk']) > 200 else result['chunk']
             })
+            idx += 1
         
         return "\n------\n".join(context_chunks), sources
     
