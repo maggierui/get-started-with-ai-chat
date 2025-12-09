@@ -12,6 +12,7 @@ import { SettingsPanel } from "../core/SettingsPanel";
 import { AgentPreviewChatBot } from "./AgentPreviewChatBot";
 import { MenuButton } from "../core/MenuButton/MenuButton";
 import { IChatItem } from "./chatbot/types";
+import { SourcesPanel, ISource } from "./SourcesPanel";
 
 import styles from "./AgentPreview.module.css";
 
@@ -46,6 +47,7 @@ export function AgentPreview({ agentDetails }: IAgentPreviewProps): ReactNode {
   const [isSettingsPanelOpen, setIsSettingsPanelOpen] = useState(false);
   const [messageList, setMessageList] = useState<IChatItem[]>([]);
   const [isResponding, setIsResponding] = useState(false);
+  const [sources, setSources] = useState<ISource[]>([]);
 
 
 
@@ -196,6 +198,14 @@ export function AgentPreview({ agentDetails }: IAgentPreviewProps): ReactNode {
                 false
               );
               return;
+            }
+
+            // Handle sources event
+            if (data.type === "sources") {
+              console.log("[ChatClient] Received sources:", data.sources);
+              setSources(data.sources || []);
+              boundary = buffer.indexOf("\n");
+              continue;
             }
 
             // Check the data type to decide how to update the UI
@@ -398,6 +408,11 @@ export function AgentPreview({ agentDetails }: IAgentPreviewProps): ReactNode {
               agentName={agentDetails.name}
               agentLogo={agentDetails.metadata?.logo}
               chatContext={chatContext}            />          </>
+      </div>
+
+      {/* Sources Panel */}
+      <div className={styles.sourcesContainer}>
+        <SourcesPanel sources={sources} />
       </div>
 
       {/* Settings Panel */}

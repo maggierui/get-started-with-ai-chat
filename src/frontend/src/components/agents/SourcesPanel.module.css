@@ -1,0 +1,78 @@
+.sourcesPanel {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  background-color: var(--colorNeutralBackground3);
+  border-left: 1px solid var(--colorNeutralStroke2);
+  overflow-y: auto;
+}
+
+.title {
+  margin-bottom: 16px;
+  color: var(--colorNeutralForeground1);
+}
+
+.emptyState {
+  color: var(--colorNeutralForeground3);
+  text-align: center;
+  margin-top: 40px;
+}
+
+.sourcesList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sourceCard {
+  padding: 12px;
+  background-color: var(--colorNeutralBackground1);
+  border: 1px solid var(--colorNeutralStroke1);
+  border-radius: 8px;
+  transition: box-shadow 0.2s ease;
+}
+
+.sourceCard:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.sourceHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.icon {
+  color: var(--colorBrandForeground1);
+  font-size: 16px;
+}
+
+.sourceRank {
+  background-color: var(--colorBrandBackground);
+  color: var(--colorNeutralForegroundOnBrand);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sourceTitle {
+  font-weight: 600;
+  color: var(--colorNeutralForeground1);
+  margin-bottom: 4px;
+  word-break: break-word;
+}
+
+.chunkId {
+  color: var(--colorNeutralForeground3);
+  margin-bottom: 8px;
+  font-size: 11px;
+}
+
+.sourceContent {
+  color: var(--colorNeutralForeground2);
+  line-height: 1.4;
+  word-break: break-word;
+}

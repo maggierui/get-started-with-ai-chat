@@ -64,12 +64,12 @@ class SearchIndexManager:
                 endpoint=self._endpoint, index_name=self._index.name, credential=self._credential)
         return self._client
 
-    async def search(self, message: ChatRequest) -> str:
+    async def search(self, message: ChatRequest) -> tuple[str, list[dict]]:
         """
         Search the message in the vector store.
 
         :param message: The customer question.
-        :return: The context for the question.
+        :return: Tuple of (context string, list of source documents with metadata).
         """
         self._raise_if_no_index()
         embedded_question = (await self._embeddings_client.embed(
@@ -80,10 +80,21 @@ class SearchIndexManager:
         vector_query = VectorizedQuery(vector=embedded_question, k_nearest_neighbors=5, fields="text_vector")
         response = await self._get_client().search(
             vector_queries=[vector_query],
-            select=['chunk'],
+            select=['chunk', 'title', 'chunk_id'],
         )
-        results = [result['chunk'] async for result in response]
-        return "\n------\n".join(results)
+        
+        sources = []
+        context_chunks = []
+        async for idx, result in enumerate(response):
+            context_chunks.append(result['chunk'])
+            sources.append({
+                'rank': idx + 1,
+                'title': result.get('title', 'Unknown'),
+                'chunk_id': result.get('chunk_id', ''),
+                'content': result['chunk'][:200] + '...' if len(result['chunk']) > 200 else result['chunk']
+            })
+        
+        return "\n------\n".join(context_chunks), sources
     
     async def upload_documents(self, embeddings_file: str) -> None:
         """
