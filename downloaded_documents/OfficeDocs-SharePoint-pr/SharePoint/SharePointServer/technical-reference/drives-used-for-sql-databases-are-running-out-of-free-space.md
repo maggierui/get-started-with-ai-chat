@@ -1,0 +1,53 @@
+---
+title: "Drives used for SQL databases are running out of free space (SharePoint Server)"
+ms.reviewer: 
+ms.author: serdars
+author: SerdarSoysal
+manager: serdars
+ms.date: 8/29/2017
+audience: ITPro
+f1.keywords:
+- NOCSH
+ms.topic: troubleshooting
+ms.service: sharepoint-server-itpro
+ms.localizationpriority: medium
+ms.collection:
+- IT_Sharepoint_Server
+- IT_Sharepoint_Server_Top
+ms.assetid: 24292545-0844-4eb0-9e80-7d4c9985755d
+description: "Learn how to resolve the SharePoint Health Analyzer rule: Drives used for SQL databases are running out of free space, for SharePoint Server."
+---
+
+# Drives used for SQL databases are running out of free space (SharePoint Server)
+
+[!INCLUDE[appliesto-2013-2016-2019-SUB-xxx-md](../includes/appliesto-2013-2016-2019-SUB-xxx-md.md)]
+  
+ **Rule Name:** Drives used for SQL databases are running out of free space. 
+  
+ **Summary:** The databases have one or more files that exceed the available free disk drive space. If this happens, operations will fail. A drive should have enough free space for the largest database file on it to autogrow twice. If the largest database file autogrows at 64MB increments, the drive needs 128MB of free space. If the largest database file is 512 GB and it autogrows in 1% increments, the drive needs 10.24 GB of free space.
+  
+ **Cause:** The databases have large files that may exceed the available free space. 
+  
+ **Resolution: Free disk space on the database server computer.**
+  
+1. Verify that the user account that is performing the following step is a member of the Administrators group on the local database server computer.
+    
+2. In **Server Manager**, click **Tools**, and then click **Defragment and Optimize Drives**.
+    
+3. Run the Optimize Drives tool to free disk space on the server computer.
+    
+4. If the event persists, move some large files to another disk drive to free up space.
+    
+**Resolution: Decrease the number of days to store log files.**
+  
+1. Verify that the user account that is performing this procedure is a member of the Farm Administrators group. 
+    
+2. On the Central Administration Home page, click **Monitoring**.
+    
+3. On the Monitoring page, in the **Reporting** section, click **Configure diagnostic logging**.
+    
+4. On the Diagnostic Logging page, in the **Trace Log** section, in the **Number of days to store log files** box, type a smaller number. 
+    
+5. Click **OK**.
+    
+

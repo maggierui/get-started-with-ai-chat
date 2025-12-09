@@ -1,0 +1,5 @@
+For each type of site lifecycle management policy—[site ownership policy](/sharepoint/create-sharepoint-site-ownership-policy), [inactive site policy](/sharepoint/site-lifecycle-management), and [site attestation policy](/sharepoint/request-site-attestations)—if multiple policies are created under the same type, notification emails aren't repeated. If a notification was sent within the last 30 days from any policy of that type, and the site remains unattested or uncertified, no further notifications are sent. The policy execution report shows the site's status as "Notified by another policy."
+
+For example, if a site is covered by two different inactive site policies and receives a notification email from the first policy, no additional notifications will be sent from the second policy within the next 30 days if the site remains uncertified.
+
+It's recommended to ensure that policies of the same type do not have overlapping scopes. If sites fall under the scope of multiple policies of the same type, the notification schedule and enforcement actions on the site could become unpredictable.

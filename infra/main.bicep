@@ -32,6 +32,8 @@ param aiServicesName string = ''
 param searchServiceName string = ''
 @description('The search index name')
 param aiSearchIndexName string = ''
+@description('The Azure AI Search endpoint for existing search service')
+param azureAISearchEndpoint string = ''
 @description('The Azure Storage Account resource name. If ommited will be generated')
 param storageAccountName string = ''
 @description('The log analytics workspace name. If ommited will be generated')
@@ -181,9 +183,11 @@ module ai 'core/host/ai-environment.bicep' = if (empty(azureExistingAIProjectRes
   }
 }
 
-var searchServiceEndpoint = !useSearchService
-  ? ''
-  : empty(azureExistingAIProjectResourceId) ? ai!.outputs.searchServiceEndpoint : ''
+var searchServiceEndpoint = !empty(azureAISearchEndpoint)
+  ? azureAISearchEndpoint
+  : !useSearchService
+    ? ''
+    : empty(azureExistingAIProjectResourceId) ? ai!.outputs.searchServiceEndpoint : ''
 
 // If bringing an existing AI project, set up the log analytics workspace here
 module logAnalytics 'core/monitor/loganalytics.bicep' = if (!empty(azureExistingAIProjectResourceId)) {

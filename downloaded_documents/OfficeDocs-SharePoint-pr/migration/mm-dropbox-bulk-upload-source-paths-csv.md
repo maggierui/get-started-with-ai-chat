@@ -1,0 +1,68 @@
+---
+ms.date: 04/04/2025
+title: "Bulk upload Dropbox drives into Migration Manager"
+ms.reviewer: 
+ms.author: heidip
+author: MicrosoftHeidi
+manager: jtremper
+recommendations: true
+audience: ITPro
+f1.keywords:
+- CSH
+ms.topic: upgrade-and-migration-article
+ms.service: microsoft-365-migration
+ms.localizationpriority: high
+ms.collection: 
+- SPMigration
+- M365-collaboration
+- m365initiative-migratetom365
+search.appverid: MET150
+description: "How to format a CSV or JSON file to bulk upload your Dropbox drives into Migration Manager."
+---
+
+# Bulk upload Dropbox accounts into Migration Manager using a CSV file 
+
+Migration Manager lets you bulk upload your Dropbox drives using a comma-separated (CSV) file. You can create the CSV file Using any text editor, or an application like Excel. JSON files aren't supported.
+
+## Before you begin
+
+- The number of sources listed in a single file must be less than 10,000.
+- The uploaded values have up to 50 scans done on them simultaneously.
+- The file contains a single column, and the column heading is optional.
+- Source paths can be entered either as [username]@[domainname]/[folder name] or as [username]@[domainname].
+
+## Formatting your CSV file
+
+![Format for bulk uploading dropbox source files into Migration Manager.](media/mm-dropbox-csv-format.png)
+
+1. Start Excel.
+2. Enter one source per row. The column heading is optional. Enter your source in one of the following ways:
+
+- **For member folders:**
+
+[username]@[domainname]/[folder name] or [username]@[domainname]
+
+- **For team folders:**
+
+    **[Before Dropbox update:](https://help.dropbox.com/plans/upcoming-business-team-changes?fallback=true)**<br>
+/[team folder name] </br>
+*Example:*  /MyTeamFolder</br>
+
+    **After update:**</br> 
+ [root namespace]/[team folder name] </br>
+*Example:*  TeamName's shared workspace/MyTeamFolder
+
+3. Close and save as a comma delimited (*.csv) file. The encoding of the CSV file must be UTF-8.
+
+## Uploading your file
+
+1. [Connect to Dropbox.](mm-google-step1-connect.md).
+2. On the menu bar, select **Add source**.
+
+  ![Add new source to upload bulk file](media/mm-upload-cloud-csv.png)
+
+3. Select **Upload a CSV file**. Browse to your file and then select **Add**.
+
+![Add Dropbox source paths.](media/mm-dropbox-add-source-path.png)
+
+4. Assess your files, and then continue to the next step, [Copy to migrations](mm-box-step3-copy-to-migrations.md).

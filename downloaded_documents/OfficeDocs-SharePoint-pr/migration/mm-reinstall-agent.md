@@ -1,0 +1,44 @@
+---
+ms.date: 04/03/2025
+title: "Reinstall your Migration Manager agent"
+ms.reviewer: 
+ms.author: heidip
+author: MicrosoftHeidi
+manager: jtremper
+recommendations: true
+audience: ITPro
+f1.keywords:
+- NOCSH
+ms.topic: install-set-up-deploy
+ms.service: microsoft-365-migration
+ms.localizationpriority: high
+ms.collection: 
+- M365-collaboration
+- SPMigration
+- m365solution-migratetom365
+- m365solution-scenario
+- highpri
+ms.custom:
+- seo-marvel-apr2020
+- admindeeplinkSPO
+search.appverid: MET150
+description: "Learn how to reinstall the Migration Manager agent on your computer."
+---
+
+# How to reinstall the Migration Manager agent
+
+You may find it necessary to reinstall the Migration Manager agent on one of your computers, especially if it encounters issues.
+
+1. From the new SharePoint admin center, select <a href="https://go.microsoft.com/fwlink/?linkid=2185075" target="_blank">**Migration center**</a>. You need to sign in with an account that has admin permissions for your organization.
+2. Under **For file shares**, select "Get started" or "View Tasks."
+3. Select the **Agents** tab, and highlight the agent you want to delete. Select **Delete**.
+4. Remaining on the **Agents** tab, select **+ Add**.
+5. Select **Download agent setup file.**
+6. Select **Continue** to reinstall the agent.
+
+![Select continue to reinstall agent screenshot.](media/mm-reinstall-agent-screen.png)
+
+7. Select **Next**.
+8. Enter the SharePoint admin username and password of the environment you want to migrate your content to. Select **Next**.
+9. Enter Windows credentials to provide access to all the file shares that contain the content you want to migrate. Select **Install**.
+10. Test agent access (optional) or select **Close**. After the setup is completed, the new agent is added to the available agents that can be assigned tasks.
