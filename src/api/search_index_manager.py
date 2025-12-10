@@ -115,7 +115,7 @@ class SearchIndexManager:
                 'rank': idx + 1,
                 'title': result.get('title', 'Unknown'),
                 'chunk_id': result.get('chunk_id', ''),
-                'content': result['chunk'][:200] + '...' if len(result['chunk']) > 200 else result['chunk']
+                'content': result['chunk']  # Send full content without truncation
             })
             idx += 1
         

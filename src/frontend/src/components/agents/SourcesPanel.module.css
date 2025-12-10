@@ -26,11 +26,12 @@
 }
 
 .sourceCard {
-  padding: 12px;
+  padding: 16px;
   background-color: var(--colorNeutralBackground1);
   border: 1px solid var(--colorNeutralStroke1);
   border-radius: 8px;
   transition: box-shadow 0.2s ease;
+  margin-bottom: 4px;
 }
 
 .sourceCard:hover {
@@ -73,6 +74,10 @@
 
 .sourceContent {
   color: var(--colorNeutralForeground2);
-  line-height: 1.4;
+  line-height: 1.5;
   word-break: break-word;
+  white-space: pre-wrap;
+  max-height: none;
+  overflow-y: visible;
+  font-size: 13px;
 }
