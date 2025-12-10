@@ -12,23 +12,34 @@ export interface ISource {
 
 interface ISourcesPanelProps {
   sources: ISource[];
+  question: string;
 }
 
-export function SourcesPanel({ sources }: ISourcesPanelProps): ReactNode {
+export function SourcesPanel({ sources, question }: ISourcesPanelProps): ReactNode {
   const handleSaveChunks = () => {
     if (sources.length === 0) return;
 
-    // Create formatted content with ranked chunks
-    const content = sources.map(source => 
+    // Create filename from first 5-6 words of question
+    const words = question.trim().split(/\s+/).slice(0, 6);
+    const cleanWords = words.map(w => w.replace(/[^a-zA-Z0-9]/g, '')).filter(w => w.length > 0);
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+    const filename = cleanWords.length > 0 
+      ? `${cleanWords.join('-')}-${timestamp}.txt`
+      : `retrieved-chunks-${timestamp}.txt`;
+
+    // Create formatted content with question and ranked chunks
+    const header = `Question: ${question}\nTimestamp: ${timestamp}\n${'='.repeat(80)}\n\n`;
+    const chunksContent = sources.map(source => 
       `=== Rank #${source.rank} ===\nTitle: ${source.title}\nChunk ID: ${source.chunk_id}\n\n${source.content}\n\n`
     ).join('\n');
+    const content = header + chunksContent;
 
     // Create a blob and download
     const blob = new Blob([content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `retrieved-chunks-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.txt`;
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

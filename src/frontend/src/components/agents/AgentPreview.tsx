@@ -48,6 +48,7 @@ export function AgentPreview({ agentDetails }: IAgentPreviewProps): ReactNode {
   const [messageList, setMessageList] = useState<IChatItem[]>([]);
   const [isResponding, setIsResponding] = useState(false);
   const [sources, setSources] = useState<ISource[]>([]);
+  const [currentQuestion, setCurrentQuestion] = useState<string>("");
 
 
 
@@ -79,6 +80,7 @@ export function AgentPreview({ agentDetails }: IAgentPreviewProps): ReactNode {
       more: { time: new Date().toISOString() },
     };
 
+    setCurrentQuestion(message);
     setMessageList((prev) => [...prev, userMessage]);
 
     try {
@@ -412,7 +414,7 @@ export function AgentPreview({ agentDetails }: IAgentPreviewProps): ReactNode {
 
       {/* Sources Panel */}
       <div className={styles.sourcesContainer}>
-        <SourcesPanel sources={sources} />
+        <SourcesPanel sources={sources} question={currentQuestion} />
       </div>
 
       {/* Settings Panel */}
