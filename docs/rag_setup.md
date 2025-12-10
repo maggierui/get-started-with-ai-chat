@@ -482,6 +482,64 @@ curl -X POST "https://<search-service>.search.windows.net/indexes/<index-name>/d
 
 ---
 
+## Application Code
+
+### Markdown Image Handling
+
+The application automatically filters markdown image references from retrieved chunks to prevent LLM API errors.
+
+**Issue**: Markdown files contain relative image paths (e.g., `![diagram](media/folder/image.png)`). The Azure AI Inference SDK's `PromptTemplate` automatically detects these and attempts to convert them to `image_url` message content types. However, relative paths are not valid URLs, causing `BadRequest: Invalid image URL` errors.
+
+**Solution**: The `SearchIndexManager._clean_markdown_images()` method strips image references before sending context to the LLM:
+
+```python
+@staticmethod
+def _clean_markdown_images(text: str) -> str:
+    """Remove markdown image references that would cause LLM API errors."""
+    # Remove inline images: ![alt text](image_path) → [Image: alt text]
+    text = re.sub(r'!\[([^\]]*)\]\([^\)]+\)', r'[Image: \1]', text)
+    
+    # Remove reference-style image definitions: [id]: path "title"
+    text = re.sub(r'^\[([^\]]+)\]:\s+[^\s]+.*$', '', text, flags=re.MULTILINE)
+    
+    return text
+```
+
+This ensures:
+- ✅ LLM receives clean text context without broken image URLs
+- ✅ Alt text is preserved as `[Image: description]` for context
+- ✅ No API errors during chat completion
+- ✅ Retrieved chunks still contain original content in the sources panel
+
+**Location**: `src/api/search_index_manager.py`
+
+### Container App Environment Variables
+
+If RAG is not working after deployment, verify the Container App has the correct environment variables:
+
+```bash
+# Check AZURE_AI_SEARCH_ENDPOINT is set
+az containerapp show \
+  --name <container-app-name> \
+  --resource-group <resource-group> \
+  --query 'properties.template.containers[0].env[] | [?name==`AZURE_AI_SEARCH_ENDPOINT`]'
+```
+
+If the value is empty (`""`), set it manually:
+
+```bash
+az containerapp update \
+  --name <container-app-name> \
+  --resource-group <resource-group> \
+  --set-env-vars "AZURE_AI_SEARCH_ENDPOINT=https://<search-service>.search.windows.net"
+```
+
+The Container App will automatically restart with the new configuration.
+
+**Common Issue**: The `.env` file in `.azure/<env-name>/.env` is only used locally during development. For production deployments, environment variables must be set in the Container App configuration (either via Bicep parameters or direct `az containerapp update`).
+
+---
+
 ## Performance Considerations
 
 ### Embedding Model Capacity
@@ -492,9 +550,9 @@ curl -X POST "https://<search-service>.search.windows.net/indexes/<index-name>/d
 
 ### Index Statistics
 
-- **Files**: ~183 markdown files
-- **Documents**: ~2000-3000 chunks (depends on header structure)
-- **Indexing Time**: ~2-5 minutes for full re-index
+- **Files**: ~2,190 markdown files
+- **Documents**: ~14,040+ chunks (with header-based chunking)
+- **Indexing Time**: ~120 minutes (hits indexer timeout, requires restart)
 
 ### Vector Search
 

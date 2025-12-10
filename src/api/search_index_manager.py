@@ -3,6 +3,7 @@ from typing import Optional
 import glob
 import csv
 import json
+import re
 
 from azure.core.credentials_async import AsyncTokenCredential
 from azure.search.documents.aio import SearchClient
@@ -64,6 +65,26 @@ class SearchIndexManager:
                 endpoint=self._endpoint, index_name=self._index.name, credential=self._credential)
         return self._client
 
+    @staticmethod
+    def _clean_markdown_images(text: str) -> str:
+        """
+        Remove or replace markdown image references that would cause LLM API errors.
+        
+        Images with relative paths can't be processed by the LLM API, so we:
+        1. Remove inline images: ![alt](path)
+        2. Remove reference-style images: ![alt][ref] and [ref]: path
+        
+        :param text: The markdown text to clean.
+        :return: Cleaned text without problematic image references.
+        """
+        # Remove inline images: ![alt text](image_path)
+        text = re.sub(r'!\[([^\]]*)\]\([^\)]+\)', r'[Image: \1]', text)
+        
+        # Remove reference-style image definitions: [id]: path "title"
+        text = re.sub(r'^\[([^\]]+)\]:\s+[^\s]+.*$', '', text, flags=re.MULTILINE)
+        
+        return text
+
     async def search(self, message: ChatRequest) -> tuple[str, list[dict]]:
         """
         Search the message in the vector store.
@@ -87,7 +108,9 @@ class SearchIndexManager:
         context_chunks = []
         idx = 0
         async for result in response:
-            context_chunks.append(result['chunk'])
+            # Clean markdown images from chunks to avoid LLM API errors
+            cleaned_chunk = self._clean_markdown_images(result['chunk'])
+            context_chunks.append(cleaned_chunk)
             sources.append({
                 'rank': idx + 1,
                 'title': result.get('title', 'Unknown'),
