@@ -13,6 +13,14 @@
   color: var(--colorNeutralForeground1);
 }
 
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  gap: 12px;
+}
+
 .emptyState {
   color: var(--colorNeutralForeground3);
   text-align: center;
