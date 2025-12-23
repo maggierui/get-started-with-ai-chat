@@ -108,21 +108,32 @@ async def chat_stream_handler(
         sources = []
         # Use RAG model, only if we were provided index and we have found a context there.
         if search_index_manager is not None:
-            context, sources = await search_index_manager.search(chat_request)
-            if context:
-                logger.info(f"Retrieved context chunks:\n{context}")
-                # Send sources to frontend first
+            try:
+                context, sources = await search_index_manager.search(chat_request)
+                if context:
+                    logger.info(f"Retrieved context chunks:\n{context}")
+                    # Send sources to frontend first
+                    yield serialize_sse_event({
+                        "type": "sources",
+                        "sources": sources
+                    })
+                    prompt_messages = PromptTemplate.from_string(
+                        'You are a helpful assistant that answers some questions '
+                        'with the help of some context data.\n\nHere is '
+                        'the context data:\n\n{{context}}').create_messages(data=dict(context=context))
+                    logger.info(f"{prompt_messages=}")
+                else:
+                    logger.info("Unable to find the relevant information in the index for the request.")
+            except Exception as e:
+                logger.error(f"Error during search: {e}")
                 yield serialize_sse_event({
-                    "type": "sources",
-                    "sources": sources
+                    "content": f"Error retrieving context: {str(e)}",
+                    "type": "completed_message"
                 })
-                prompt_messages = PromptTemplate.from_string(
-                    'You are a helpful assistant that answers some questions '
-                    'with the help of some context data.\n\nHere is '
-                    'the context data:\n\n{{context}}').create_messages(data=dict(context=context))
-                logger.info(f"{prompt_messages=}")
-            else:
-                logger.info("Unable to find the relevant information in the index for the request.")
+                yield serialize_sse_event({
+                    "type": "stream_end"
+                })
+                return
         try:
             accumulated_message = ""
             chat_coroutine = await chat_client.complete(

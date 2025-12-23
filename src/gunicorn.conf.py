@@ -27,11 +27,15 @@ async def create_index_maybe():
                 index_name=os.getenv('AZURE_AI_SEARCH_INDEX_NAME'),
                 dimensions=None,
                 model=os.getenv('AZURE_AI_EMBED_DEPLOYMENT_NAME'),
-                embeddings_client=None
+                embeddings_client=None,
+                semantic_config_name=os.getenv('AZURE_AI_SEARCH_SEMANTIC_CONFIG_NAME', 'semantic-docs')
             )
             # If another application instance already have created the index,
             # do not upload the documents.
-            if await search_mgr.create_index(
+            # Also skip upload if explicitly disabled (e.g. when using external indexers)
+            skip_upload = os.getenv('SKIP_RAG_DATA_UPLOAD', 'false').lower() == 'true'
+            
+            if not skip_upload and await search_mgr.create_index(
               vector_index_dimensions=int(
                   os.getenv('AZURE_AI_EMBED_DIMENSIONS'))):
                 embeddings_path = os.path.join(

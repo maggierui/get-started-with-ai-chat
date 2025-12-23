@@ -4,11 +4,12 @@ import glob
 import csv
 import json
 import re
+import os
 
 from azure.core.credentials_async import AsyncTokenCredential
 from azure.search.documents.aio import SearchClient
 from azure.search.documents.indexes.aio import SearchIndexClient
-from azure.search.documents.models import VectorizedQuery 
+from azure.search.documents.models import VectorizedQuery, QueryType
 from azure.search.documents.indexes.models import (
     SearchField,
     SearchFieldDataType,  
@@ -16,7 +17,11 @@ from azure.search.documents.indexes.models import (
     SearchIndex,
     VectorSearch,
     VectorSearchProfile,
-    HnswAlgorithmConfiguration)
+    HnswAlgorithmConfiguration,
+    SemanticConfiguration,
+    SemanticField,
+    SemanticPrioritizedFields,
+    SemanticSearch)
 from azure.ai.inference.aio import EmbeddingsClient
 from azure.core.exceptions import ResourceNotFoundError, HttpResponseError
 from .util import ChatRequest
@@ -47,6 +52,7 @@ class SearchIndexManager:
             dimensions: Optional[int],
             model: str,
             embeddings_client: EmbeddingsClient,
+            semantic_config_name: str = "semantic-docs",
         ) -> None:
         """Constructor."""
         self._dimensions = dimensions
@@ -57,6 +63,7 @@ class SearchIndexManager:
         self._index = None
         self._model = model
         self._client = None
+        self._semantic_config_name = semantic_config_name
 
     def _get_client(self):
         """Get search client if it is absent."""
@@ -87,7 +94,7 @@ class SearchIndexManager:
 
     async def search(self, message: ChatRequest) -> tuple[str, list[dict]]:
         """
-        Search the message in the vector store.
+        Search the message in the vector store using hybrid search with semantic ranking.
 
         :param message: The customer question.
         :return: Tuple of (context string, list of source documents with metadata).
@@ -98,24 +105,45 @@ class SearchIndexManager:
             dimensions=self._dimensions,
             model=self._model
         ))['data'][0]['embedding']
-        vector_query = VectorizedQuery(vector=embedded_question, k_nearest_neighbors=5, fields="text_vector")
-        response = await self._get_client().search(
-            vector_queries=[vector_query],
-            select=['chunk', 'title', 'chunk_id'],
-        )
+        
+        search_text = message.messages[-1].content
+        
+        # Get field names from environment or default to sample schema
+        vector_field = os.getenv("AZURE_SEARCH_FIELD_VECTOR", "embedding")
+        content_field = os.getenv("AZURE_SEARCH_FIELD_CONTENT", "token")
+        
+        vector_query = VectorizedQuery(vector=embedded_question, k_nearest_neighbors=5, fields=vector_field)
+        
+        # Use semantic search only if semantic configuration is available
+        search_params = {
+            "search_text": search_text,
+            "vector_queries": [vector_query],
+            "select": [content_field, 'title', 'chunk_id'],
+            "top": 5
+        }
+        
+        # Only add semantic parameters if semantic config name is provided
+        if self._semantic_config_name:
+            search_params["query_type"] = QueryType.SEMANTIC
+            search_params["semantic_configuration_name"] = self._semantic_config_name
+        
+        response = await self._get_client().search(**search_params)
         
         sources = []
         context_chunks = []
         idx = 0
         async for result in response:
+            # Handle different content field names
+            content = result.get(content_field) or result.get('chunk') or result.get('content') or ""
+            
             # Clean markdown images from chunks to avoid LLM API errors
-            cleaned_chunk = self._clean_markdown_images(result['chunk'])
+            cleaned_chunk = self._clean_markdown_images(content)
             context_chunks.append(cleaned_chunk)
             sources.append({
                 'rank': idx + 1,
                 'title': result.get('title', 'Unknown'),
                 'chunk_id': result.get('chunk_id', ''),
-                'content': result['chunk']  # Send full content without truncation
+                'content': content  # Send full content without truncation
             })
             idx += 1
         
@@ -212,7 +240,8 @@ class SearchIndexManager:
                 self._endpoint,
                 self._credential,
                 self._index_name,
-                vector_index_dimensions)
+                vector_index_dimensions,
+                self._semantic_config_name)
 
     @staticmethod
     async def index_exists(
@@ -242,6 +271,7 @@ class SearchIndexManager:
             credential: AsyncTokenCredential,
             index_name: str,
             dimensions: int,
+            semantic_config_name: str = "semantic-docs",
         ) -> SearchIndex:
         """
         Get o create the search index.
@@ -264,7 +294,8 @@ class SearchIndexManager:
                 endpoint=endpoint,
                 credential=credential,
                 index_name=index_name,
-                dimensions=dimensions
+                dimensions=dimensions,
+                semantic_config_name=semantic_config_name
             )
         return index
 
@@ -291,7 +322,8 @@ class SearchIndexManager:
                 endpoint=self._endpoint,
                 credential=self._credential,
                 index_name=self._index_name,
-                dimensions=vector_index_dimensions
+                dimensions=vector_index_dimensions,
+                semantic_config_name=self._semantic_config_name
             )
             return True
         except HttpResponseError:
@@ -303,8 +335,9 @@ class SearchIndexManager:
         endpoint: str,
         credential: AsyncTokenCredential,
         index_name: str,
-        dimensions: int) -> SearchIndex:
-        """Create the index."""
+        dimensions: int,
+        semantic_config_name: str = "semantic-docs") -> SearchIndex:
+        """Create the index with semantic search enabled."""
         async with SearchIndexClient(endpoint=endpoint, credential=credential) as ix_client:
             fields = [
                 SimpleField(name="embedId", type=SearchFieldDataType.String, key=True),
@@ -315,14 +348,33 @@ class SearchIndexManager:
                     searchable=True,
                     vector_search_profile_name="embedding_config"
                 ),
-                SimpleField(name="token", type=SearchFieldDataType.String, hidden=False),
+                SearchField(name="token", type=SearchFieldDataType.String, hidden=False, searchable=True),
             ]
+            
+            # Configure vector search
             vector_search = VectorSearch(
                 profiles=[VectorSearchProfile(name="embedding_config",
                                               algorithm_configuration_name="embed-algorithms-config")],
                 algorithms=[HnswAlgorithmConfiguration(name="embed-algorithms-config")],
             )
-            search_index = SearchIndex(name=index_name, fields=fields, vector_search=vector_search)
+            
+            # Configure semantic search
+            semantic_search = None
+            if semantic_config_name:
+                semantic_config = SemanticConfiguration(
+                    name=semantic_config_name,
+                    prioritized_fields=SemanticPrioritizedFields(
+                        content_fields=[SemanticField(field_name="token")]
+                    )
+                )
+                semantic_search = SemanticSearch(configurations=[semantic_config])
+            
+            search_index = SearchIndex(
+                name=index_name, 
+                fields=fields, 
+                vector_search=vector_search,
+                semantic_search=semantic_search
+            )
             new_index = await ix_client.create_index(search_index)
         return new_index
         
