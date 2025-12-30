@@ -14,13 +14,64 @@ from pathlib import Path
 from azure.identity.aio import DefaultAzureCredential
 from azure.storage.blob.aio import BlobServiceClient
 from azure.ai.inference.aio import EmbeddingsClient
+from azure.search.documents.indexes.aio import SearchIndexClient
 from src.api.search_index_manager import SearchIndexManager
 from openai import AsyncAzureOpenAI
 from azure.identity import get_bearer_token_provider
+from azure.core.exceptions import ResourceNotFoundError
 
 # Download NLTK data
 import nltk
 nltk.download('punkt_tab', quiet=True)
+
+
+async def validate_index_alignment(endpoint: str, credential, index_name: str, expected_dims: int, expected_semantic: str, vector_field: str) -> None:
+    """Validate an existing index matches expected vector dimensions and semantic config.
+
+    Abort early with a clear message if the live index diverges from env settings.
+    """
+    async with SearchIndexClient(endpoint=endpoint, credential=credential) as ix_client:
+        try:
+            index = await ix_client.get_index(index_name)
+        except ResourceNotFoundError:
+            print(f"Index '{index_name}' not found. A new index will be created.")
+            return
+
+        print(f"Found existing index '{index_name}'. Validating schema...")
+
+        vector_field_def = next((f for f in index.fields if f.name == vector_field), None)
+        live_dims = getattr(vector_field_def, "vector_search_dimensions", None) if vector_field_def else None
+        if live_dims != expected_dims:
+            raise RuntimeError(
+                f"Index '{index_name}' vector dims {live_dims} do not match expected {expected_dims}. "
+                "Please recreate the index to align with the configured embedding dimensions."
+            )
+
+        if expected_semantic:
+            configs = (index.semantic_search.configurations if index.semantic_search else []) or []
+            names = [c.name for c in configs]
+            if expected_semantic not in names:
+                raise RuntimeError(
+                    f"Index '{index_name}' semantic configs {names or '[none]'} do not include expected "
+                    f"'{expected_semantic}'. Please recreate the index with the correct semantic configuration."
+                )
+
+        print("Existing index matches expected dimensions and semantic configuration; reuse is allowed.")
+
+
+async def summarize_blobs(storage_account: str, container: str, prefix: str, credential) -> tuple[int, int]:
+    """Return counts of all blobs and .md blobs for visibility before download."""
+    storage_url = f"https://{storage_account}.blob.core.windows.net"
+    total = 0
+    markdown = 0
+    async with BlobServiceClient(account_url=storage_url, credential=credential) as client:
+        container_client = client.get_container_client(container)
+        async for blob in container_client.list_blobs(name_starts_with=prefix or None):
+            total += 1
+            if blob.name.lower().endswith('.md'):
+                markdown += 1
+    print(f"Blob inventory -> total: {total}, markdown: {markdown}, prefix: '{prefix or '[none]'}'")
+    return total, markdown
 
 
 def parse_args():
@@ -48,10 +99,12 @@ async def main(args):
     storage_account_name = os.getenv("AZURE_STORAGE_ACCOUNT_NAME", "stzpz5xvg2elsve")
     container_name = os.getenv("AZURE_STORAGE_CONTAINER_NAME")  # You need to provide this
     blob_prefix = os.getenv("AZURE_STORAGE_BLOB_PREFIX", "")  # Optional: restrict to a subfolder
+    vector_field = os.getenv("AZURE_SEARCH_FIELD_VECTOR", "text_vector")
     search_endpoint = os.getenv("AZURE_AI_SEARCH_ENDPOINT")
     index_name = os.getenv("AZURE_AI_SEARCH_INDEX_NAME")
     embed_deployment = os.getenv("AZURE_AI_EMBED_DEPLOYMENT_NAME", "text-embedding-3-large")
     embed_dimensions = int(os.getenv("AZURE_AI_EMBED_DIMENSIONS", "3072"))
+    semantic_config_name = os.getenv("AZURE_AI_SEARCH_SEMANTIC_CONFIG_NAME", "semantic-docs")
     ai_project_endpoint = os.getenv("AZURE_EXISTING_AIPROJECT_ENDPOINT")
     
     # Validate required environment variables
@@ -68,8 +121,10 @@ async def main(args):
     print(f"  Container: {container_name}")
     print(f"  Search Endpoint: {search_endpoint}")
     print(f"  Index Name: {index_name}")
+    print(f"  Vector Field: {vector_field}")
     print(f"  Embedding Model: {embed_deployment}")
     print(f"  Embedding Dimensions: {embed_dimensions}")
+    print(f"  Semantic Config: {semantic_config_name}")
     print(f"  AI Project Endpoint: {ai_project_endpoint}")
     print(f"  Blob Prefix: {blob_prefix or '[none]'}")
     
@@ -91,6 +146,24 @@ async def main(args):
     else:
         credential = AzureDeveloperCliCredential()
         token_credential = credential
+
+    # Validate existing index alignment before proceeding
+    await validate_index_alignment(
+        endpoint=search_endpoint,
+        credential=credential,
+        index_name=index_name,
+        expected_dims=embed_dimensions,
+        expected_semantic=semantic_config_name,
+        vector_field=vector_field,
+    )
+
+    # Summarize blobs before any download to catch scope issues early
+    await summarize_blobs(
+        storage_account=storage_account_name,
+        container=container_name,
+        prefix=blob_prefix,
+        credential=token_credential,
+    )
     
     # Download documents from blob storage
     download_dir = Path("./downloaded_documents")
@@ -154,6 +227,7 @@ async def main(args):
         dimensions=embed_dimensions,
         model=embed_deployment,
         embeddings_client=embeddings_client,
+        semantic_config_name=semantic_config_name,
     )
     
     # Build embeddings file

@@ -16,11 +16,13 @@ async def main():
     index_name = os.getenv("AZURE_AI_SEARCH_INDEX_NAME")
     embed_deployment = os.getenv("AZURE_AI_EMBED_DEPLOYMENT_NAME", "text-embedding-3-large")
     embed_dimensions = int(os.getenv("AZURE_AI_EMBED_DIMENSIONS", "3072"))
+    semantic_config_name = os.getenv("AZURE_AI_SEARCH_SEMANTIC_CONFIG_NAME", "semantic-docs")
     ai_project_endpoint = os.getenv("AZURE_EXISTING_AIPROJECT_ENDPOINT")
     
     print(f"Creating index with {embed_dimensions} dimensions...")
     print(f"Search Endpoint: {search_endpoint}")
     print(f"Index Name: {index_name}")
+    print(f"Semantic Config: {semantic_config_name}")
     
     # Create credential
     credential = AzureDeveloperCliCredential()
@@ -39,6 +41,7 @@ async def main():
         dimensions=embed_dimensions,
         model=embed_deployment,
         embeddings_client=embeddings_client,
+        semantic_config_name=semantic_config_name,
     )
     
     # Create the index
