@@ -537,6 +537,7 @@ class SearchIndexManager:
 
         # Recursively pick up markdown files in nested folders (e.g., blob prefix subdirectories)
         globs = glob.glob(os.path.join(input_directory, '**', '*.md'), recursive=True)
+        print(f"Found {len(globs)} markdown files under {input_directory}")
 
         for fle in globs:
             with open(fle, encoding="utf-8") as f:
@@ -591,11 +592,15 @@ class SearchIndexManager:
 
         # For each chunk build the embedding, which will be used in the search.
         batch_size = 10
+        total_chunks = len(chunks)
+        total_batches = (total_chunks + batch_size - 1) // batch_size
+        print(f"Embedding {total_chunks} chunks across {total_batches} batches (batch size {batch_size})")
         fieldnames = ['chunk_id', 'chunk', 'embedding'] + [field_name for _, field_name, _ in self.METADATA_FIELDS]
         with open(output_file, 'w', encoding="utf-8", newline='') as fp:
             writer = csv.DictWriter(fp, fieldnames=fieldnames)
             writer.writeheader()
             for i in range(0, len(chunks), batch_size):
+                batch_number = (i // batch_size) + 1
                 batch = chunks[i:i+batch_size]
                 
                 # Add a small delay between batches to avoid hitting rate limits
@@ -627,10 +632,12 @@ class SearchIndexManager:
                             if attempt < retries - 1:
                                 # Increase wait time significantly as requested by the API (often 60s)
                                 wait_time = 60 + (attempt * 10)
-                                print(f"Rate limit hit. Retrying batch {i//batch_size} in {wait_time}s...")
+                                print(f"Rate limit hit. Retrying batch {batch_number} in {wait_time}s...")
                                 await asyncio.sleep(wait_time)
                                 continue
                         raise e
+
+                print(f"Completed batch {batch_number}/{total_batches} ({min(i+batch_size, total_chunks)}/{total_chunks} chunks)")
 
                 for offset, (chunk, embedding) in enumerate(zip(batch, embeddings)):
                     row = {
