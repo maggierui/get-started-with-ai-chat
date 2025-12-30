@@ -114,16 +114,18 @@ async def chat_stream_handler(
 
         prompt_messages = PromptTemplate.from_string('You are a helpful assistant').create_messages()
         sources = []
+        retrieval_mode = "natural"
         # Use RAG model, only if we were provided index and we have found a context there.
         if search_index_manager is not None:
             try:
-                context, sources = await search_index_manager.search(chat_request)
+                context, sources, retrieval_mode = await search_index_manager.search(chat_request)
                 if context:
                     logger.info(f"Retrieved context chunks:\n{context}")
                     # Send sources to frontend first
                     yield serialize_sse_event({
                         "type": "sources",
-                        "sources": sources
+                        "sources": sources,
+                        "mode": retrieval_mode
                     })
                     prompt_messages = PromptTemplate.from_string(
                         'You are a helpful assistant that answers some questions '

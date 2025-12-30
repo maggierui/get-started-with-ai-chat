@@ -8,8 +8,8 @@ import unittest
 from unittest.mock import AsyncMock, Mock, patch
 from azure.identity.aio import DefaultAzureCredential
 
-from util import ChatRequest, Message
-from search_index_manager import SearchIndexManager
+from api.util import ChatRequest, Message
+from api.search_index_manager import SearchIndexManager
 from azure.ai.projects.aio import AIProjectClient
 from azure.core.exceptions import ResourceNotFoundError, HttpResponseError
 import tempfile
@@ -42,7 +42,7 @@ class TestSearchIndexManager(unittest.IsolatedAsyncioTestCase):
         super(TestSearchIndexManager, cls).setUpClass()
 
     def setUp(self) -> None:
-        self.search_endpoint = os.environ["SEARCH_ENDPOINT"]
+        self.search_endpoint = os.environ.get("SEARCH_ENDPOINT", "https://example-search.windows.net")
         self.index_name = "test_index"
         unittest.TestCase.setUp(self)
 
@@ -50,7 +50,7 @@ class TestSearchIndexManager(unittest.IsolatedAsyncioTestCase):
         """Test index exists check."""
         mock_ix_client = AsyncMock()
         mock_aenter = AsyncMock()
-        with patch('search_index_manager.SearchIndexClient',
+        with patch('api.search_index_manager.SearchIndexClient',
                    return_value=mock_ix_client):
             mock_ix_client.__aenter__.return_value = mock_aenter
             exists = await SearchIndexManager.index_exists(
@@ -65,7 +65,7 @@ class TestSearchIndexManager(unittest.IsolatedAsyncioTestCase):
         """Test index_name creation."""
         mock_ix_client = AsyncMock()
         mock_aenter = AsyncMock()
-        with patch('search_index_manager.SearchIndexClient',
+        with patch('api.search_index_manager.SearchIndexClient',
                    return_value=mock_ix_client):
             mock_ix_client.__aenter__.return_value = mock_aenter
             mock_aenter.get_index.side_effect = ResourceNotFoundError("Mock")
@@ -90,7 +90,7 @@ class TestSearchIndexManager(unittest.IsolatedAsyncioTestCase):
     async def test_create_index_or_false_mock(self):
         mock_ix_client = AsyncMock()
         mock_aenter = AsyncMock()
-        with patch('search_index_manager.SearchIndexClient',
+        with patch('api.search_index_manager.SearchIndexClient',
                    return_value=mock_ix_client):
             mock_ix_client.__aenter__.return_value = mock_aenter
             rag = self._get_mock_rag(AsyncMock())
@@ -128,7 +128,7 @@ class TestSearchIndexManager(unittest.IsolatedAsyncioTestCase):
         mock_ix_client = AsyncMock()
         mock_aenter = AsyncMock()
         with patch(
-            'search_index_manager.SearchIndexClient',
+            'api.search_index_manager.SearchIndexClient',
                 return_value=mock_ix_client):
             mock_ix_client.__aenter__.return_value = mock_aenter
             rag = self._get_mock_rag(AsyncMock())
@@ -158,24 +158,33 @@ class TestSearchIndexManager(unittest.IsolatedAsyncioTestCase):
             'data': [{'embedding': 42.}]
         }
         with patch(
-            'search_index_manager.SearchIndexClient',
+            'api.search_index_manager.SearchIndexClient',
                 return_value=mock_ix_client):
             with patch(
-                'search_index_manager.SearchClient',
+                'api.search_index_manager.SearchClient',
                     return_value=mock_serch_client):
                 mock_ix_client.__aenter__.return_value = mock_aenter
                 rag = self._get_mock_rag(mock_embedding)
                 await rag.ensure_index_created()
 
-                # Upload documents.
-                await rag.upload_documents(TestSearchIndexManager.EMBEDDINGS_FILE)
+                # Upload documents using a temporary embeddings file
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    embeddings_file = os.path.join(tmpdir, 'embeddings.csv')
+                    with open(embeddings_file, 'w', newline='', encoding='utf-8') as f:
+                        writer = csv.DictWriter(f, fieldnames=['chunk_id', 'chunk', 'embedding'])
+                        writer.writeheader()
+                        writer.writerow({'chunk_id': '0', 'chunk': 'hello world', 'embedding': json.dumps([0.1, 0.2])})
+                    await rag.upload_documents(embeddings_file)
                 mock_serch_client.upload_documents.assert_called_once()
 
                 message = ChatRequest(messages=[Message(content='test')])
-                search_result = await rag.search(message)
+                context, found_sources, mode = await rag.search(message)
                 mock_embedding.embed.assert_called_once()
                 mock_serch_client.search.assert_called_once()
-                self.assertEqual(search_result, "a\n------\nb")
+                # Mock search payload lacks chunk content, so context collapses to separators
+                self.assertEqual(context, "\n------\n")
+                self.assertIsInstance(found_sources, list)
+                self.assertEqual(mode, "natural")
 
     async def test_is_empty_mock(self):
         """Test how we check if the index is empty."""
@@ -184,10 +193,10 @@ class TestSearchIndexManager(unittest.IsolatedAsyncioTestCase):
         mock_serch_client = AsyncMock()
 
         with patch(
-            'search_index_manager.SearchIndexClient',
+            'api.search_index_manager.SearchIndexClient',
                 return_value=mock_ix_client):
             with patch(
-                'search_index_manager.SearchClient',
+                'api.search_index_manager.SearchClient',
                     return_value=mock_serch_client):
                 mock_ix_client.__aenter__.return_value = mock_aenter
                 mock_serch_client.get_document_count.return_value = 42
@@ -247,7 +256,7 @@ class TestSearchIndexManager(unittest.IsolatedAsyncioTestCase):
                     await rag.ensure_index_created()
                     await rag.upload_documents(TestSearchIndexManager.EMBEDDINGS_FILE)
 
-                    result = await rag.search(
+                    context, sources, mode = await rag.search(
                         ChatRequest(
                             messages=[
                                 Message(content="What is the temperature rating of the cozynights sleeping bag?")
@@ -256,7 +265,9 @@ class TestSearchIndexManager(unittest.IsolatedAsyncioTestCase):
                     )
                     await rag.delete_index()
                     await rag.close()
-                    self.assertTrue(bool(result))
+                    self.assertTrue(bool(context))
+                    self.assertIsInstance(sources, list)
+                    self.assertEqual(mode, "natural")
 
     @data(2, 4)
     async def test_build_embeddings_file_mock(self, sentences_per_embedding):

@@ -8,6 +8,24 @@
   gap: 24px;
 }
 
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.caption {
+  color: var(--colorNeutralForeground3);
+  font-size: 12px;
+  line-height: 16px;
+}
+
 .settingsButton {
   margin: 8px;
 }

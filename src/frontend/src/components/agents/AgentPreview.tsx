@@ -48,7 +48,9 @@ export function AgentPreview({ agentDetails }: IAgentPreviewProps): ReactNode {
   const [messageList, setMessageList] = useState<IChatItem[]>([]);
   const [isResponding, setIsResponding] = useState(false);
   const [sources, setSources] = useState<ISource[]>([]);
+  const [retrievalMode, setRetrievalMode] = useState<"natural" | "metadata_inference">("natural");
   const [currentQuestion, setCurrentQuestion] = useState<string>("");
+  const [useMetadataInference, setUseMetadataInference] = useState(false);
 
 
 
@@ -59,6 +61,9 @@ export function AgentPreview({ agentDetails }: IAgentPreviewProps): ReactNode {
 
   const newThread = () => {
     setMessageList([]);
+    setSources([]);
+    setCurrentQuestion("");
+    setRetrievalMode(useMetadataInference ? "metadata_inference" : "natural");
     deleteAllCookies();
   };
 
@@ -88,11 +93,13 @@ export function AgentPreview({ agentDetails }: IAgentPreviewProps): ReactNode {
         role: item.role,
         content: item.content,
       }));
-      const postData = {messages};
+      const postData = {messages, use_metadata_inference: useMetadataInference};
       // IMPORTANT: Add credentials: 'include' if server cookies are critical
       // and if your backend is on the same domain or properly configured for cross-site cookies.
 
-      setIsResponding(true);      
+      setIsResponding(true);
+      setRetrievalMode(useMetadataInference ? "metadata_inference" : "natural");
+      setSources([]);
       const response = await fetch("/chat", {
         method: "POST",
         headers: {
@@ -206,6 +213,11 @@ export function AgentPreview({ agentDetails }: IAgentPreviewProps): ReactNode {
             if (data.type === "sources") {
               console.log("[ChatClient] Received sources:", data.sources);
               setSources(data.sources || []);
+              if (data.mode === "metadata_inference") {
+                setRetrievalMode("metadata_inference");
+              } else {
+                setRetrievalMode("natural");
+              }
               boundary = buffer.indexOf("\n");
               continue;
             }
@@ -414,13 +426,19 @@ export function AgentPreview({ agentDetails }: IAgentPreviewProps): ReactNode {
 
       {/* Sources Panel */}
       <div className={styles.sourcesContainer}>
-        <SourcesPanel sources={sources} question={currentQuestion} />
+        <SourcesPanel
+          mode={retrievalMode}
+          question={currentQuestion}
+          sources={sources}
+        />
       </div>
 
       {/* Settings Panel */}
       <SettingsPanel
         isOpen={isSettingsPanelOpen}
         onOpenChange={handleSettingsPanelOpenChange}
+        useMetadataInference={useMetadataInference}
+        onUseMetadataInferenceChange={setUseMetadataInference}
       />
     </div>
   );

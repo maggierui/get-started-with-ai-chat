@@ -48,3 +48,4 @@ class Message(pydantic.BaseModel):
 
 class ChatRequest(pydantic.BaseModel):
     messages: list[Message]
+    use_metadata_inference: bool = False

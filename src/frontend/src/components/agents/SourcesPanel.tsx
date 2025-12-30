@@ -10,12 +10,15 @@ export interface ISource {
   content: string;
 }
 
+type RetrievalMode = "natural" | "metadata_inference";
+
 interface ISourcesPanelProps {
   sources: ISource[];
   question: string;
+  mode?: RetrievalMode;
 }
 
-export function SourcesPanel({ sources, question }: ISourcesPanelProps): ReactNode {
+export function SourcesPanel({ sources, question, mode = "natural" }: ISourcesPanelProps): ReactNode {
   const handleSaveChunks = () => {
     if (sources.length === 0) return;
 
@@ -28,7 +31,7 @@ export function SourcesPanel({ sources, question }: ISourcesPanelProps): ReactNo
       : `retrieved-chunks-${timestamp}.txt`;
 
     // Create formatted content with question and ranked chunks
-    const header = `Question: ${question}\nTimestamp: ${timestamp}\n${'='.repeat(80)}\n\n`;
+    const header = `Question: ${question}\nMode: ${mode}\nTimestamp: ${timestamp}\n${'='.repeat(80)}\n\n`;
     const chunksContent = sources.map(source => 
       `=== Rank #${source.rank} ===\nTitle: ${source.title}\nChunk ID: ${source.chunk_id}\n\n${source.content}\n\n`
     ).join('\n');
@@ -60,7 +63,10 @@ export function SourcesPanel({ sources, question }: ISourcesPanelProps): ReactNo
   return (
     <div className={styles.sourcesPanel}>
       <div className={styles.header}>
-        <Title3 className={styles.title}>Retrieved Sources ({sources.length})</Title3>
+        <div className={styles.headerText}>
+          <Title3 className={styles.title}>Retrieved Sources ({sources.length})</Title3>
+          <Caption1 className={styles.mode}>Mode: {mode === "metadata_inference" ? "Metadata inference" : "Natural"}</Caption1>
+        </div>
         <Button
           appearance="primary"
           icon={<SaveRegular />}

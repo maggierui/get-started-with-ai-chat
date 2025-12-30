@@ -21,6 +21,16 @@
   gap: 12px;
 }
 
+.headerText {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mode {
+  color: var(--colorNeutralForeground3);
+}
+
 .emptyState {
   color: var(--colorNeutralForeground3);
   text-align: center;

@@ -108,14 +108,15 @@ class SearchIndexManager:
         
         return text
 
-    async def search(self, message: ChatRequest) -> tuple[str, list[dict]]:
+    async def search(self, message: ChatRequest) -> tuple[str, list[dict], str]:
         """
         Search the message in the vector store using hybrid search with semantic ranking.
 
         :param message: The customer question.
-        :return: Tuple of (context string, list of source documents with metadata).
+        :return: Tuple of (context string, list of source documents with metadata, retrieval mode).
         """
         self._raise_if_no_index()
+        retrieval_mode = "metadata_inference" if getattr(message, "use_metadata_inference", False) else "natural"
         embedded_question = (await self._embeddings_client.embed(
             input=message.messages[-1].content,
             dimensions=self._dimensions,
@@ -166,7 +167,7 @@ class SearchIndexManager:
             })
             idx += 1
         
-        return "\n------\n".join(context_chunks), sources
+        return "\n------\n".join(context_chunks), sources, retrieval_mode
     
     async def upload_documents(self, embeddings_file: str, batch_size: int = 200) -> None:
         """
@@ -641,23 +642,23 @@ class SearchIndexManager:
                 if buffer:
                     chunk_body = " ".join(buffer)
                     chunk_text = f"{prefix_text}\n\n{chunk_body}" if prefix_text else chunk_body
-                        if len(chunk_text) > max_chunk_chars:
-                            truncated_chunks += 1
-                            chunk_text = chunk_text[:max_chunk_chars]
+                    if len(chunk_text) > max_chunk_chars:
+                        truncated_chunks += 1
+                        chunk_text = chunk_text[:max_chunk_chars]
                     chunks.append({
                         "text": chunk_text,
                         "metadata": normalized_metadata
                     })
 
         # For each chunk build the embedding, which will be used in the search.
-            if chunks:
-                lengths = sorted(len(c["text"]) for c in chunks)
-                p95_index = max(int(len(lengths) * 0.95) - 1, 0)
-                p95 = lengths[p95_index]
-                avg = sum(lengths) / len(lengths)
-                print(f"Chunk stats -> count: {len(chunks)}, avg chars: {avg:.1f}, p95 chars: {p95}, max chars: {lengths[-1]}, truncated: {truncated_chunks}")
-            else:
-                print("Chunk stats -> no chunks produced; check input documents and filters.")
+        if chunks:
+            lengths = sorted(len(c["text"]) for c in chunks)
+            p95_index = max(int(len(lengths) * 0.95) - 1, 0)
+            p95 = lengths[p95_index]
+            avg = sum(lengths) / len(lengths)
+            print(f"Chunk stats -> count: {len(chunks)}, avg chars: {avg:.1f}, p95 chars: {p95}, max chars: {lengths[-1]}, truncated: {truncated_chunks}")
+        else:
+            print("Chunk stats -> no chunks produced; check input documents and filters.")
 
         batch_size = 10
         total_chunks = len(chunks)
