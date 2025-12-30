@@ -196,6 +196,14 @@ class SearchIndexManager:
         retries_total = 0
         client = self._get_client()
 
+        # Count total rows for progress reporting
+        try:
+            with open(embeddings_file, newline='', encoding="utf-8") as fp:
+                total_rows = sum(1 for _ in csv.DictReader(fp))
+        except FileNotFoundError as e:
+            raise
+        total_rows = max(total_rows, 1)
+
         async def upload_batch(payload: list[dict], batch_no: int) -> None:
             nonlocal retries_total
             max_retries = 3
@@ -241,7 +249,9 @@ class SearchIndexManager:
 
                 if len(documents) >= batch_size:
                     batches += 1
-                    print(f"Uploading batch {batches} of {len(documents)} documents...")
+                    processed_before = skipped_docs + uploaded_docs
+                    progress = 100.0 * min((processed_before + len(documents)) / total_rows, 1)
+                    print(f"Uploading batch {batches} of {len(documents)} documents... ({progress:.1f}% of {total_rows})")
                     await upload_batch(documents, batches)
                     uploaded_docs += len(documents)
                     with open(checkpoint_path, "w", encoding="utf-8") as cp:
@@ -250,7 +260,9 @@ class SearchIndexManager:
 
         if documents:
             batches += 1
-            print(f"Uploading final batch {batches} of {len(documents)} documents...")
+            processed_before = skipped_docs + uploaded_docs
+            progress = 100.0 * min((processed_before + len(documents)) / total_rows, 1)
+            print(f"Uploading final batch {batches} of {len(documents)} documents... ({progress:.1f}% of {total_rows})")
             await upload_batch(documents, batches)
             uploaded_docs += len(documents)
             with open(checkpoint_path, "w", encoding="utf-8") as cp:
