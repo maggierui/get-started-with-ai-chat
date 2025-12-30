@@ -294,6 +294,15 @@ async def main(args):
     await search_index_manager.upload_documents(embeddings_file)
     print("  Upload complete!")
 
+    # Post-upload document count check
+    with open(embeddings_file, newline='', encoding="utf-8") as fp:
+        rows = sum(1 for _ in fp) - 1  # subtract header
+    doc_count = await search_index_manager._get_client().get_document_count()
+    if doc_count != rows:
+        print(f"WARNING: Index document count ({doc_count}) != embeddings rows ({rows}). Consider re-uploading.")
+    else:
+        print(f"Validation: Index document count matches embeddings rows ({rows}).")
+
     # Optional probe query to sanity-check the index
     if args.probe:
         print(f"\n7. Running probe query: {args.probe}")
