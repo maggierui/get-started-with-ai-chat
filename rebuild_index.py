@@ -91,6 +91,11 @@ def parse_args():
         default="./embeddings.csv",
         help="Path to embeddings CSV (default: ./embeddings.csv)",
     )
+    parser.add_argument(
+        "--probe",
+        default=None,
+        help="Optional test query to run after upload; prints top 3 titles and chunk_ids",
+    )
     return parser.parse_args()
 
 
@@ -253,6 +258,46 @@ async def main(args):
     print("\n6. Uploading embeddings to search index...")
     await search_index_manager.upload_documents(embeddings_file)
     print("  Upload complete!")
+
+    # Optional probe query to sanity-check the index
+    if args.probe:
+        print(f"\n7. Running probe query: {args.probe}")
+        vector_field = os.getenv("AZURE_SEARCH_FIELD_VECTOR", "text_vector")
+        content_field = os.getenv("AZURE_SEARCH_FIELD_CONTENT", "chunk")
+        query = args.probe
+        embedded_question = (await embed.embed(
+            input=query,
+            dimensions=embed_dimensions,
+            model=embed_deployment,
+        ))["data"][0]["embedding"]
+
+        vector_query = {
+            "vector": embedded_question,
+            "k_nearest_neighbors": 3,
+            "fields": vector_field,
+        }
+
+        search_params = {
+            "search_text": query,
+            "vector_queries": [vector_query],
+            "select": [content_field, "title", "chunk_id"],
+            "top": 3,
+        }
+
+        if semantic_config_name:
+            search_params["query_type"] = "semantic"
+            search_params["semantic_configuration_name"] = semantic_config_name
+
+        search_client = search_index_manager._get_client()
+        results = await search_client.search(**search_params)
+        print("Probe results (top 3):")
+        idx = 1
+        async for doc in results:
+            title = doc.get("title", "Unknown")
+            chunk_id = doc.get("chunk_id", "")
+            snippet = (doc.get(content_field) or "")[:200].replace("\n", " ")
+            print(f"  {idx}. title='{title}' chunk_id='{chunk_id}' snippet='{snippet}'")
+            idx += 1
     
     print("\n✅ Index rebuild complete!")
     print(f"Your search index '{index_name}' is ready to use.")
