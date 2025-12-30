@@ -6,10 +6,51 @@
     <meta name="description" content="">
     <title>Get Started with AI Agents</title>
     <link href="/static/react/assets/main-react-app.css " rel="stylesheet" type="text/css">
+    <style>
+        .index-banner {
+            font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            padding: 10px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border-bottom: 1px solid #1f2937;
+        }
+        .index-banner strong { color: #cbd5e1; }
+        .index-banner .pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 8px;
+            border-radius: 999px;
+            background: #1e293b;
+            color: #cbd5e1;
+            font-size: 12px;
+            border: 1px solid #334155;
+        }
+        .index-banner .desc {
+            color: #94a3b8;
+            font-size: 13px;
+        }
+    </style>
 </head>
 <body style="margin: 0;">
+    <div class="index-banner">
+        <div><strong>Index:</strong> {{ index_name }}</div>
+        {% if semantic_config %}<div class="pill">Semantic: {{ semantic_config }}</div>{% endif %}
+        <div class="desc">{{ index_description }}</div>
+        {% if not search_enabled %}<div class="pill" style="background:#7f1d1d;border-color:#991b1b;color:#fecdd3;">Search disabled</div>{% endif %}
+    </div>
     <div id="react-root"></div>
     <!-- Load React app with fixed filename -->
+    <script>
+        window.__INDEX_INFO__ = {
+            name: {{ index_name | tojson }},
+            description: {{ index_description | tojson }},
+            semantic: {{ semantic_config | tojson }},
+            searchEnabled: {{ 'true' if search_enabled else 'false' }}
+        };
+    </script>
     <script type="module" src="/static/react/assets/main-react-app.js"></script>
 </body>
 </html>

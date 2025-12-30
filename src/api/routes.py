@@ -77,10 +77,18 @@ def serialize_sse_event(data: Dict) -> str:
 
 @router.get("/", response_class=HTMLResponse)
 async def index_name(request: Request, _ = auth_dependency):
+    index_name = os.getenv("AZURE_AI_SEARCH_INDEX_NAME", "(not set)")
+    index_description = os.getenv("INDEX_DESCRIPTION", index_name)
+    semantic_config = os.getenv("AZURE_AI_SEARCH_SEMANTIC_CONFIG_NAME", "")
+    search_enabled = request.app.state.search_index_manager is not None
     return templates.TemplateResponse(
         "index.html", 
         {
             "request": request,
+            "index_name": index_name,
+            "index_description": index_description,
+            "semantic_config": semantic_config,
+            "search_enabled": search_enabled,
         }
     )
 
