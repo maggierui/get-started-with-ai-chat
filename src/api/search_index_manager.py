@@ -1,18 +1,21 @@
-from typing import Optional
+from typing import Optional, Union
 
 import glob
 import csv
 import json
 import re
 import os
+import yaml
+import asyncio
 
+from azure.core.credentials import AzureKeyCredential
 from azure.core.credentials_async import AsyncTokenCredential
 from azure.search.documents.aio import SearchClient
 from azure.search.documents.indexes.aio import SearchIndexClient
 from azure.search.documents.models import VectorizedQuery, QueryType
 from azure.search.documents.indexes.models import (
     SearchField,
-    SearchFieldDataType,  
+    SearchFieldDataType,
     SimpleField,
     SearchIndex,
     VectorSearch,
@@ -21,8 +24,10 @@ from azure.search.documents.indexes.models import (
     SemanticConfiguration,
     SemanticField,
     SemanticPrioritizedFields,
-    SemanticSearch)
+    SemanticSearch,
+)
 from azure.ai.inference.aio import EmbeddingsClient
+from openai import AsyncAzureOpenAI
 from azure.core.exceptions import ResourceNotFoundError, HttpResponseError
 from .util import ChatRequest
 
@@ -43,15 +48,26 @@ class SearchIndexManager:
     
     MIN_DIFF_CHARACTERS_IN_LINE = 5
     MIN_LINE_LENGTH = 5
+    METADATA_FIELDS = [
+        ("title", "title", False),
+        ("ms.date", "ms_date", False),
+        ("customer-intent", "customer_intent", False),
+        ("ms.topic", "ms_topic", False),
+        ("ms.service", "ms_service", False),
+        ("ms.collection", "ms_collection", True),
+        ("description", "description", False),
+        ("audience", "audience", False),
+        ("ms.product", "ms_product", False),
+    ]
     
     def __init__(
             self,
             endpoint: str,
-            credential: AsyncTokenCredential,
+            credential: Union[AsyncTokenCredential, AzureKeyCredential],
             index_name: str,
             dimensions: Optional[int],
             model: str,
-            embeddings_client: EmbeddingsClient,
+            embeddings_client: Union[EmbeddingsClient, AsyncAzureOpenAI],
             semantic_config_name: str = "semantic-docs",
         ) -> None:
         """Constructor."""
@@ -109,16 +125,17 @@ class SearchIndexManager:
         search_text = message.messages[-1].content
         
         # Get field names from environment or default to sample schema
-        vector_field = os.getenv("AZURE_SEARCH_FIELD_VECTOR", "embedding")
-        content_field = os.getenv("AZURE_SEARCH_FIELD_CONTENT", "token")
+        vector_field = os.getenv("AZURE_SEARCH_FIELD_VECTOR", "text_vector")
+        content_field = os.getenv("AZURE_SEARCH_FIELD_CONTENT", "chunk")
         
         vector_query = VectorizedQuery(vector=embedded_question, k_nearest_neighbors=5, fields=vector_field)
         
         # Use semantic search only if semantic configuration is available
+        select_fields = [content_field, 'title', 'chunk_id'] + [field_name for _, field_name, _ in self.METADATA_FIELDS]
         search_params = {
             "search_text": search_text,
             "vector_queries": [vector_query],
-            "select": [content_field, 'title', 'chunk_id'],
+            "select": select_fields,
             "top": 5
         }
         
@@ -143,33 +160,54 @@ class SearchIndexManager:
                 'rank': idx + 1,
                 'title': result.get('title', 'Unknown'),
                 'chunk_id': result.get('chunk_id', ''),
-                'content': content  # Send full content without truncation
+                'content': content,  # Send full content without truncation
+                **{field_name: result.get(field_name) for _, field_name, _ in self.METADATA_FIELDS}
             })
             idx += 1
         
         return "\n------\n".join(context_chunks), sources
     
-    async def upload_documents(self, embeddings_file: str) -> None:
+    async def upload_documents(self, embeddings_file: str, batch_size: int = 200) -> None:
         """
-        Upload the embeggings file to index search.
+        Upload the embeddings file to index search.
 
         :param embeddings_file: The embeddings file to upload.
+        :param batch_size: The number of documents to upload in a single batch.
         """
         self._raise_if_no_index()
         documents = []
         index = 0
-        with open(embeddings_file, newline='') as fp:
+        client = self._get_client()
+        
+        with open(embeddings_file, newline='', encoding="utf-8") as fp:
             reader = csv.DictReader(fp)
             for row in reader:
-                documents.append(
-                    {
-                        'embedId': str(index),
-                        'token': row['token'],
-                        'embedding': json.loads(row['embedding'])
-                    }
-                )
+                document = {
+                    'embedId': str(index),
+                    'chunk': row['chunk'],
+                    'text_vector': json.loads(row['embedding'])
+                }
+
+                for _, field_name, is_collection in self.METADATA_FIELDS:
+                    value = row.get(field_name, "")
+                    if not value:
+                        continue
+                    if is_collection:
+                        document[field_name] = [item.strip() for item in value.split(';') if item.strip()]
+                    else:
+                        document[field_name] = value
+
+                documents.append(document)
                 index += 1
-        await self._get_client().upload_documents(documents)
+                
+                if len(documents) >= batch_size:
+                    print(f"Uploading batch of {len(documents)} documents...")
+                    await client.upload_documents(documents)
+                    documents = []
+        
+        if documents:
+            print(f"Uploading final batch of {len(documents)} documents...")
+            await client.upload_documents(documents)
 
     async def is_index_empty(self) -> bool:
         """
@@ -246,7 +284,7 @@ class SearchIndexManager:
     @staticmethod
     async def index_exists(
         endpoint: str,
-        credential: AsyncTokenCredential,
+        credential: Union[AsyncTokenCredential, AzureKeyCredential],
         index_name: str) -> bool:
         """
         Check if index exists.
@@ -268,7 +306,7 @@ class SearchIndexManager:
     @staticmethod
     async def get_or_create_index(
             endpoint: str,
-            credential: AsyncTokenCredential,
+            credential: Union[AsyncTokenCredential, AzureKeyCredential],
             index_name: str,
             dimensions: int,
             semantic_config_name: str = "semantic-docs",
@@ -333,7 +371,7 @@ class SearchIndexManager:
     @staticmethod
     async def _index_create(
         endpoint: str,
-        credential: AsyncTokenCredential,
+        credential: Union[AsyncTokenCredential, AzureKeyCredential],
         index_name: str,
         dimensions: int,
         semantic_config_name: str = "semantic-docs") -> SearchIndex:
@@ -342,13 +380,22 @@ class SearchIndexManager:
             fields = [
                 SimpleField(name="embedId", type=SearchFieldDataType.String, key=True),
                 SearchField(
-                    name="embedding",
+                    name="text_vector",
                     type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
                     vector_search_dimensions=dimensions,
                     searchable=True,
                     vector_search_profile_name="embedding_config"
                 ),
-                SearchField(name="token", type=SearchFieldDataType.String, hidden=False, searchable=True),
+                SearchField(name="chunk", type=SearchFieldDataType.String, hidden=False, searchable=True),
+                SimpleField(name="title", type=SearchFieldDataType.String, searchable=True, filterable=True),
+                SimpleField(name="ms_date", type=SearchFieldDataType.String, searchable=True, filterable=True, sortable=True),
+                SimpleField(name="customer_intent", type=SearchFieldDataType.String, searchable=True, filterable=True),
+                SimpleField(name="ms_topic", type=SearchFieldDataType.String, searchable=True, filterable=True),
+                SimpleField(name="ms_service", type=SearchFieldDataType.String, searchable=True, filterable=True),
+                SearchField(name="ms_collection", type=SearchFieldDataType.Collection(SearchFieldDataType.String), searchable=True, filterable=True),
+                SimpleField(name="description", type=SearchFieldDataType.String, searchable=True),
+                SimpleField(name="audience", type=SearchFieldDataType.String, searchable=True, filterable=True),
+                SimpleField(name="ms_product", type=SearchFieldDataType.String, searchable=True, filterable=True),
             ]
             
             # Configure vector search
@@ -361,10 +408,16 @@ class SearchIndexManager:
             # Configure semantic search
             semantic_search = None
             if semantic_config_name:
+                content_fields = [SemanticField(field_name="chunk")]
+                for _, field_name, _ in SearchIndexManager.METADATA_FIELDS:
+                    if field_name != "title":
+                        content_fields.append(SemanticField(field_name=field_name))
+
                 semantic_config = SemanticConfiguration(
                     name=semantic_config_name,
                     prioritized_fields=SemanticPrioritizedFields(
-                        content_fields=[SemanticField(field_name="token")]
+                        title_field=SemanticField(field_name="title"),
+                        content_fields=content_fields
                     )
                 )
                 semantic_search = SemanticSearch(configurations=[semantic_config])
@@ -377,7 +430,77 @@ class SearchIndexManager:
             )
             new_index = await ix_client.create_index(search_index)
         return new_index
-        
+
+    @staticmethod
+    def _extract_front_matter(content: str) -> tuple[dict, str]:
+        """Split YAML front matter from markdown body."""
+        lines = content.splitlines()
+        if not lines or lines[0].strip() != "---":
+            # Try to find H1 title if no front matter
+            title_match = re.search(r'^#\s+(.+)$', content, re.MULTILINE)
+            if title_match:
+                return {"title": title_match.group(1).strip()}, content
+            return {}, content
+
+        closing_index = None
+        for idx in range(1, len(lines)):
+            if lines[idx].strip() == "---":
+                closing_index = idx
+                break
+
+        if closing_index is None:
+            return {}, content
+
+        front_matter_raw = "\n".join(lines[1:closing_index])
+        body = "\n".join(lines[closing_index + 1:])
+
+        try:
+            parsed = yaml.safe_load(front_matter_raw) or {}
+        except yaml.YAMLError:
+            parsed = {}
+            
+        # If title is missing in YAML, try to find H1 in body
+        if "title" not in parsed:
+            title_match = re.search(r'^#\s+(.+)$', body, re.MULTILINE)
+            if title_match:
+                parsed["title"] = title_match.group(1).strip()
+
+        return parsed, body
+
+    @classmethod
+    def _normalize_metadata(cls, metadata: dict) -> tuple[list[str], dict]:
+        """Normalize configured metadata fields to strings and a deterministic prefix."""
+        prefix_lines: list[str] = []
+        normalized: dict = {}
+
+        for raw_name, field_name, is_collection in cls.METADATA_FIELDS:
+            if metadata is None:
+                continue
+            value = metadata.get(raw_name)
+            if value is None:
+                continue
+
+            if is_collection:
+                if isinstance(value, str):
+                    values = [item.strip() for item in value.split(',') if item.strip()]
+                elif isinstance(value, (list, tuple, set)):
+                    values = [str(item).strip() for item in value if str(item).strip()]
+                else:
+                    values = [str(value).strip()]
+                if not values:
+                    continue
+                value_str = "; ".join(values)
+            else:
+                value_str = str(value).strip()
+
+            if not value_str:
+                continue
+
+            prefix_lines.append(f"{raw_name}: {value_str}")
+            normalized[field_name] = value_str
+
+        return prefix_lines, normalized
+
 
     async def build_embeddings_file(
             self,
@@ -402,41 +525,95 @@ class SearchIndexManager:
         """
         import nltk
         nltk.download('punkt')
-        
+
         from nltk.tokenize import sent_tokenize
-        # Split the data to sentence tokens.
-        sentence_tokens = []
-        globs = glob.glob(input_directory + '/*.md', recursive=True)
-        index = 0
+
+        chunks: list[dict] = []
+        globs = glob.glob(os.path.join(input_directory, '*.md'), recursive=True)
+
         for fle in globs:
-            with open(fle) as f:
-                for line in f:
-                    line = line.strip()
-                    # Skip non informative lines.
-                    if len(line) < SearchIndexManager.MIN_LINE_LENGTH or len(set(line)) < SearchIndexManager.MIN_DIFF_CHARACTERS_IN_LINE:
-                        continue
-                    for sentence in sent_tokenize(line):
-                        if index % sentences_per_embedding == 0:
-                            sentence_tokens.append(sentence)
-                        else:
-                            sentence_tokens[-1] += ' '
-                            sentence_tokens[-1] += sentence
-                        index += 1
-        
-        
-        # For each token build the embedding, which will be used in the search.
-        batch_size = 2000
-        with open(output_file, 'w') as fp:
-            writer = csv.DictWriter(fp, fieldnames=['token', 'embedding'])
+            with open(fle, encoding="utf-8") as f:
+                content = f.read()
+
+            metadata, body = self._extract_front_matter(content)
+            prefix_lines, normalized_metadata = self._normalize_metadata(metadata)
+            prefix_text = "\n".join(prefix_lines) if prefix_lines else ""
+
+            sentences = sent_tokenize(body)
+            buffer: list[str] = []
+            for sentence in sentences:
+                sentence = sentence.strip()
+                if len(sentence) < SearchIndexManager.MIN_LINE_LENGTH or len(set(sentence)) < SearchIndexManager.MIN_DIFF_CHARACTERS_IN_LINE:
+                    continue
+                buffer.append(sentence)
+                if len(buffer) == sentences_per_embedding:
+                    chunk_body = " ".join(buffer)
+                    chunk_text = f"{prefix_text}\n\n{chunk_body}" if prefix_text else chunk_body
+                    chunks.append({
+                        "text": chunk_text,
+                        "metadata": normalized_metadata
+                    })
+                    buffer = []
+
+            if buffer:
+                chunk_body = " ".join(buffer)
+                chunk_text = f"{prefix_text}\n\n{chunk_body}" if prefix_text else chunk_body
+                chunks.append({
+                    "text": chunk_text,
+                    "metadata": normalized_metadata
+                })
+
+        # For each chunk build the embedding, which will be used in the search.
+        batch_size = 10
+        fieldnames = ['chunk', 'embedding'] + [field_name for _, field_name, _ in self.METADATA_FIELDS]
+        with open(output_file, 'w', encoding="utf-8", newline='') as fp:
+            writer = csv.DictWriter(fp, fieldnames=fieldnames)
             writer.writeheader()
-            for i in range(0, len(sentence_tokens), batch_size):
-                emedding = (await self._embeddings_client.embed(
-                    input=sentence_tokens[i:i+min(batch_size, len(sentence_tokens))],
-                    dimensions=self._dimensions,
-                    model=self._model
-                ))["data"]
-                for token, float_data in zip(sentence_tokens, emedding):
-                    writer.writerow({'token': token, 'embedding': json.dumps(float_data['embedding'])})
+            for i in range(0, len(chunks), batch_size):
+                batch = chunks[i:i+batch_size]
+                
+                # Add a small delay between batches to avoid hitting rate limits
+                if i > 0:
+                    await asyncio.sleep(1)
+
+                retries = 5
+                for attempt in range(retries):
+                    try:
+                        if isinstance(self._embeddings_client, EmbeddingsClient):
+                            embedding_response = (await self._embeddings_client.embed(
+                                input=[chunk['text'] for chunk in batch],
+                                dimensions=self._dimensions,
+                                model=self._model
+                            ))["data"]
+                            embeddings = [item['embedding'] for item in embedding_response]
+                        else:
+                            # AsyncAzureOpenAI
+                            kwargs = {"dimensions": self._dimensions} if self._dimensions else {}
+                            response = await self._embeddings_client.embeddings.create(
+                                input=[chunk['text'] for chunk in batch],
+                                model=self._model,
+                                **kwargs
+                            )
+                            embeddings = [item.embedding for item in response.data]
+                        break
+                    except Exception as e:
+                        if "RateLimitReached" in str(e) or "429" in str(e):
+                            if attempt < retries - 1:
+                                # Increase wait time significantly as requested by the API (often 60s)
+                                wait_time = 60 + (attempt * 10)
+                                print(f"Rate limit hit. Retrying batch {i//batch_size} in {wait_time}s...")
+                                await asyncio.sleep(wait_time)
+                                continue
+                        raise e
+
+                for chunk, embedding in zip(batch, embeddings):
+                    row = {
+                        'chunk': chunk['text'],
+                        'embedding': json.dumps(embedding)
+                    }
+                    for _, field_name, _ in self.METADATA_FIELDS:
+                        row[field_name] = chunk['metadata'].get(field_name, "")
+                    writer.writerow(row)
 
     async def close(self):
         """Close the closeable resources, associated with SearchIndexManager."""

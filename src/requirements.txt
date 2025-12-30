@@ -6,6 +6,8 @@ aiohttp==3.13.1
 azure-ai-inference==1.0.0b9
 azure-ai-projects==1.0.0
 azure-search-documents
+PyYAML>=6.0
+openai>=1.0.0
 
 azure-core==1.34.0  # other versions might not compatible
 azure-core-tracing-opentelemetry

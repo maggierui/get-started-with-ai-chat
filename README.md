@@ -2,6 +2,8 @@
 
 # Get Started with Chat Using Microsoft Foundry
 
+> Project note: This codebase is based on the Microsoft "Get started with AI chat" template. It has been modified to test content retrieval performance and to validate our organization's content AI-readiness recommendations. Licensing remains consistent with the original template license in this repository.
+
 <div style="text-align:center;">
 
 [**SOLUTION OVERVIEW**](#solution-overview) \| [**GETTING STARTED**](#getting-started) \| [**LOCAL DEVELOPMENT**](#local-development) \| [**RESOURCE CLEAN-UP**](#resource-clean-up) \|  [**GUIDANCE**](#guidance) \| [**DISCLAIMERS**](#disclaimers)
@@ -19,6 +21,13 @@ The application leverages Microsoft Foundry projects and Foundry Tools to provid
 This solution creates an Microsoft Foundry project and Foundry Tools. More details about the resources can be found in the [resources](#resources) documentation. There are options to enable RAG, logging, tracing, and monitoring.
 
 Instructions are provided for deployment through GitHub Codespaces, VS Code Dev Containers, and your local development environment.
+
+### Project Workflow (what happens under the hood)
+
+- Documents are downloaded from Azure Storage using the configured `AZURE_STORAGE_BLOB_PREFIX` and `AZURE_STORAGE_CONTAINER_NAME` (see `.azure/lmc-doc-chat/.env`).
+- `rebuild_index.py` generates embeddings (`embeddings.csv`), creating `chunk_id` per chunk, and uploads them to Azure AI Search.
+- The search index uses vector + semantic search; the chat service queries it via `SearchIndexManager` to retrieve context for answers.
+- The web chat app calls the API, which embeds the user question, runs hybrid search against the index, and returns responses with retrieved sources.
 
 ### Solution Architecture
 
@@ -69,6 +78,26 @@ This guide covers:
 • AI model and RAG configuration
 • Embedding file upload
 • Testing and debugging your application
+
+#### Rebuilding the search index (local)
+
+If you need to rebuild the Azure AI Search index from your blob content:
+
+- Load env vars in your shell so the script sees them:
+
+  ```bash
+  set -a
+  source .azure/lmc-doc-chat/.env
+  set +a
+  ```
+
+- (Optional but recommended) remove old artifacts: `rm embeddings.csv` and `rm -r downloaded_documents`.
+
+- Ensure `AZURE_AI_SEARCH_ENDPOINT` is populated (for example `https://lmc-doc-search.search.windows.net`) and `AZURE_STORAGE_BLOB_PREFIX` points to the correct folder (for example `m365-doc-12-28`).
+
+- Run the rebuild: `python rebuild_index.py --force-embeddings`
+
+- After completion, confirm data: `wc -l embeddings.csv` (>1) and `find downloaded_documents -type f | head` should list the expected files.
 
 - **[Tracing and Monitoring](./docs/other_features.md#tracing-and-monitoring)** - View console logs in Azure portal and App Insights tracing in Microsoft Foundry for debugging and performance monitoring.
 
