@@ -534,6 +534,8 @@ class SearchIndexManager:
         chunk_mode = os.getenv("CHUNK_MODE", "sentences")  # "sentences" (default) or "pages"
         max_page_length = int(os.getenv("MAX_PAGE_LENGTH", "2000"))
         page_overlap_length = int(os.getenv("PAGE_OVERLAP_LENGTH", "500"))
+        sentence_chunk_overlap = int(os.getenv("SENTENCE_CHUNK_OVERLAP", "0"))
+        truncated_chunks = 0
 
         # Recursively pick up markdown files in nested folders (e.g., blob prefix subdirectories)
         globs = glob.glob(os.path.join(input_directory, '**', '*.md'), recursive=True)
@@ -554,7 +556,9 @@ class SearchIndexManager:
                 while start < len(full_text):
                     end = min(start + max_page_length, len(full_text))
                     chunk_text = full_text[start:end]
-                    chunk_text = chunk_text[:max_chunk_chars]
+                    if len(chunk_text) > max_chunk_chars:
+                        truncated_chunks += 1
+                        chunk_text = chunk_text[:max_chunk_chars]
                     chunks.append({
                         "text": chunk_text,
                         "metadata": normalized_metadata
@@ -574,23 +578,36 @@ class SearchIndexManager:
                     if len(buffer) == sentences_per_embedding:
                         chunk_body = " ".join(buffer)
                         chunk_text = f"{prefix_text}\n\n{chunk_body}" if prefix_text else chunk_body
-                        chunk_text = chunk_text[:max_chunk_chars]
+                        if len(chunk_text) > max_chunk_chars:
+                            truncated_chunks += 1
+                            chunk_text = chunk_text[:max_chunk_chars]
                         chunks.append({
                             "text": chunk_text,
                             "metadata": normalized_metadata
                         })
-                        buffer = []
+                        buffer = buffer[-sentence_chunk_overlap:] if sentence_chunk_overlap else []
 
                 if buffer:
                     chunk_body = " ".join(buffer)
                     chunk_text = f"{prefix_text}\n\n{chunk_body}" if prefix_text else chunk_body
-                    chunk_text = chunk_text[:max_chunk_chars]
+                        if len(chunk_text) > max_chunk_chars:
+                            truncated_chunks += 1
+                            chunk_text = chunk_text[:max_chunk_chars]
                     chunks.append({
                         "text": chunk_text,
                         "metadata": normalized_metadata
                     })
 
         # For each chunk build the embedding, which will be used in the search.
+            if chunks:
+                lengths = sorted(len(c["text"]) for c in chunks)
+                p95_index = max(int(len(lengths) * 0.95) - 1, 0)
+                p95 = lengths[p95_index]
+                avg = sum(lengths) / len(lengths)
+                print(f"Chunk stats -> count: {len(chunks)}, avg chars: {avg:.1f}, p95 chars: {p95}, max chars: {lengths[-1]}, truncated: {truncated_chunks}")
+            else:
+                print("Chunk stats -> no chunks produced; check input documents and filters.")
+
         batch_size = 10
         total_chunks = len(chunks)
         total_batches = (total_chunks + batch_size - 1) // batch_size
