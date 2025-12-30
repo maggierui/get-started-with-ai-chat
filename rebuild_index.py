@@ -123,16 +123,18 @@ async def main(args):
     # Create embeddings client
     print("\n2. Creating embeddings client...")
     
-    if "cognitiveservices.azure.com" in ai_project_endpoint or "openai.azure.com" in ai_project_endpoint:
-        print(f"  Detected Azure OpenAI endpoint: {ai_project_endpoint}")
-        # We need a synchronous credential for get_bearer_token_provider, but we have an async one (or we can create a sync one)
-        # AzureDeveloperCliCredential can be sync or async.
+    # Normalize endpoint to the resource host (strip /api/projects/... if present)
+    project_base_endpoint = ai_project_endpoint.split('/api')[0].rstrip('/') if ai_project_endpoint else None
+
+    if any(host in ai_project_endpoint for host in ["cognitiveservices.azure.com", "openai.azure.com", "services.ai.azure.com"]):
+        print(f"  Detected Azure OpenAI/Azure AI endpoint: {ai_project_endpoint}")
+        # We need a synchronous credential for get_bearer_token_provider
         from azure.identity import AzureDeveloperCliCredential as SyncAzureDeveloperCliCredential
         sync_credential = SyncAzureDeveloperCliCredential()
         token_provider = get_bearer_token_provider(sync_credential, "https://cognitiveservices.azure.com/.default")
         
         embeddings_client = AsyncAzureOpenAI(
-            azure_endpoint=ai_project_endpoint,
+            azure_endpoint=project_base_endpoint,
             api_version="2023-05-15", 
             azure_ad_token_provider=token_provider
         )

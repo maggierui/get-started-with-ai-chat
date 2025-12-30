@@ -155,3 +155,4 @@ src/api/static/react/
 .vscode/launch.json
 downloaded_documents/
 embeddings.csv
+.azure/

@@ -159,7 +159,8 @@ class SearchIndexManager:
             sources.append({
                 'rank': idx + 1,
                 'title': result.get('title', 'Unknown'),
-                'chunk_id': result.get('chunk_id', ''),
+                # Prefer chunk_id if present, otherwise fall back to embedId for legacy indexes
+                'chunk_id': result.get('chunk_id') or result.get('embedId', ''),
                 'content': content,  # Send full content without truncation
                 **{field_name: result.get(field_name) for _, field_name, _ in self.METADATA_FIELDS}
             })
@@ -183,7 +184,7 @@ class SearchIndexManager:
             reader = csv.DictReader(fp)
             for row in reader:
                 document = {
-                    'embedId': str(index),
+                    'chunk_id': row.get('chunk_id', str(index)),
                     'chunk': row['chunk'],
                     'text_vector': json.loads(row['embedding'])
                 }
@@ -378,7 +379,7 @@ class SearchIndexManager:
         """Create the index with semantic search enabled."""
         async with SearchIndexClient(endpoint=endpoint, credential=credential) as ix_client:
             fields = [
-                SimpleField(name="embedId", type=SearchFieldDataType.String, key=True),
+                SimpleField(name="chunk_id", type=SearchFieldDataType.String, key=True, searchable=True),
                 SearchField(
                     name="text_vector",
                     type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
@@ -529,7 +530,13 @@ class SearchIndexManager:
         from nltk.tokenize import sent_tokenize
 
         chunks: list[dict] = []
-        globs = glob.glob(os.path.join(input_directory, '*.md'), recursive=True)
+        max_chunk_chars = int(os.getenv("MAX_CHUNK_CHARS", "6000"))
+        chunk_mode = os.getenv("CHUNK_MODE", "sentences")  # "sentences" (default) or "pages"
+        max_page_length = int(os.getenv("MAX_PAGE_LENGTH", "2000"))
+        page_overlap_length = int(os.getenv("PAGE_OVERLAP_LENGTH", "500"))
+
+        # Recursively pick up markdown files in nested folders (e.g., blob prefix subdirectories)
+        globs = glob.glob(os.path.join(input_directory, '**', '*.md'), recursive=True)
 
         for fle in globs:
             with open(fle, encoding="utf-8") as f:
@@ -539,33 +546,52 @@ class SearchIndexManager:
             prefix_lines, normalized_metadata = self._normalize_metadata(metadata)
             prefix_text = "\n".join(prefix_lines) if prefix_lines else ""
 
-            sentences = sent_tokenize(body)
-            buffer: list[str] = []
-            for sentence in sentences:
-                sentence = sentence.strip()
-                if len(sentence) < SearchIndexManager.MIN_LINE_LENGTH or len(set(sentence)) < SearchIndexManager.MIN_DIFF_CHARACTERS_IN_LINE:
-                    continue
-                buffer.append(sentence)
-                if len(buffer) == sentences_per_embedding:
-                    chunk_body = " ".join(buffer)
-                    chunk_text = f"{prefix_text}\n\n{chunk_body}" if prefix_text else chunk_body
+            if chunk_mode == "pages":
+                # Aligns with portal SplitSkill textSplitMode=pages style chunking
+                full_text = f"{prefix_text}\n\n{body}" if prefix_text else body
+                start = 0
+                while start < len(full_text):
+                    end = min(start + max_page_length, len(full_text))
+                    chunk_text = full_text[start:end]
+                    chunk_text = chunk_text[:max_chunk_chars]
                     chunks.append({
                         "text": chunk_text,
                         "metadata": normalized_metadata
                     })
-                    buffer = []
+                    if end == len(full_text):
+                        break
+                    # slide with overlap
+                    start = max(end - page_overlap_length, end)
+            else:
+                sentences = sent_tokenize(body)
+                buffer: list[str] = []
+                for sentence in sentences:
+                    sentence = sentence.strip()
+                    if len(sentence) < SearchIndexManager.MIN_LINE_LENGTH or len(set(sentence)) < SearchIndexManager.MIN_DIFF_CHARACTERS_IN_LINE:
+                        continue
+                    buffer.append(sentence)
+                    if len(buffer) == sentences_per_embedding:
+                        chunk_body = " ".join(buffer)
+                        chunk_text = f"{prefix_text}\n\n{chunk_body}" if prefix_text else chunk_body
+                        chunk_text = chunk_text[:max_chunk_chars]
+                        chunks.append({
+                            "text": chunk_text,
+                            "metadata": normalized_metadata
+                        })
+                        buffer = []
 
-            if buffer:
-                chunk_body = " ".join(buffer)
-                chunk_text = f"{prefix_text}\n\n{chunk_body}" if prefix_text else chunk_body
-                chunks.append({
-                    "text": chunk_text,
-                    "metadata": normalized_metadata
-                })
+                if buffer:
+                    chunk_body = " ".join(buffer)
+                    chunk_text = f"{prefix_text}\n\n{chunk_body}" if prefix_text else chunk_body
+                    chunk_text = chunk_text[:max_chunk_chars]
+                    chunks.append({
+                        "text": chunk_text,
+                        "metadata": normalized_metadata
+                    })
 
         # For each chunk build the embedding, which will be used in the search.
         batch_size = 10
-        fieldnames = ['chunk', 'embedding'] + [field_name for _, field_name, _ in self.METADATA_FIELDS]
+        fieldnames = ['chunk_id', 'chunk', 'embedding'] + [field_name for _, field_name, _ in self.METADATA_FIELDS]
         with open(output_file, 'w', encoding="utf-8", newline='') as fp:
             writer = csv.DictWriter(fp, fieldnames=fieldnames)
             writer.writeheader()
@@ -606,8 +632,9 @@ class SearchIndexManager:
                                 continue
                         raise e
 
-                for chunk, embedding in zip(batch, embeddings):
+                for offset, (chunk, embedding) in enumerate(zip(batch, embeddings)):
                     row = {
+                        'chunk_id': str(i + offset),
                         'chunk': chunk['text'],
                         'embedding': json.dumps(embedding)
                     }
