@@ -170,21 +170,58 @@ class SearchIndexManager:
     
     async def upload_documents(self, embeddings_file: str, batch_size: int = 200) -> None:
         """
-        Upload the embeddings file to index search.
+        Upload the embeddings file to index search with retry and resume support.
 
         :param embeddings_file: The embeddings file to upload.
         :param batch_size: The number of documents to upload in a single batch.
         """
         self._raise_if_no_index()
+        checkpoint_path = embeddings_file + ".upload.chk"
+        resume_from = 0
+        if os.path.exists(checkpoint_path):
+            try:
+                with open(checkpoint_path, "r", encoding="utf-8") as cp:
+                    data = json.load(cp)
+                    resume_from = int(data.get("last_row", 0))
+                    print(f"Resuming upload from row {resume_from} based on checkpoint {checkpoint_path}")
+            except Exception:
+                resume_from = 0
+
         documents = []
-        index = 0
+        row_index = 0
+        uploaded_docs = 0
+        skipped_docs = 0
+        batches = 0
+        retries_total = 0
         client = self._get_client()
-        
+
+        async def upload_batch(payload: list[dict], batch_no: int) -> None:
+            nonlocal retries_total
+            max_retries = 3
+            backoff = 5
+            for attempt in range(max_retries):
+                try:
+                    await client.upload_documents(payload)
+                    return
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        retries_total += 1
+                        wait = backoff * (attempt + 1)
+                        print(f"Batch {batch_no} failed (attempt {attempt + 1}/{max_retries}), retrying in {wait}s: {e}")
+                        await asyncio.sleep(wait)
+                        continue
+                    raise
+
         with open(embeddings_file, newline='', encoding="utf-8") as fp:
             reader = csv.DictReader(fp)
             for row in reader:
+                if row_index < resume_from:
+                    row_index += 1
+                    skipped_docs += 1
+                    continue
+
                 document = {
-                    'chunk_id': row.get('chunk_id', str(index)),
+                    'chunk_id': row.get('chunk_id', str(row_index)),
                     'chunk': row['chunk'],
                     'text_vector': json.loads(row['embedding'])
                 }
@@ -199,16 +236,30 @@ class SearchIndexManager:
                         document[field_name] = value
 
                 documents.append(document)
-                index += 1
-                
+                row_index += 1
+
                 if len(documents) >= batch_size:
-                    print(f"Uploading batch of {len(documents)} documents...")
-                    await client.upload_documents(documents)
+                    batches += 1
+                    print(f"Uploading batch {batches} of {len(documents)} documents...")
+                    await upload_batch(documents, batches)
+                    uploaded_docs += len(documents)
+                    with open(checkpoint_path, "w", encoding="utf-8") as cp:
+                        json.dump({"last_row": row_index}, cp)
                     documents = []
-        
+
         if documents:
-            print(f"Uploading final batch of {len(documents)} documents...")
-            await client.upload_documents(documents)
+            batches += 1
+            print(f"Uploading final batch {batches} of {len(documents)} documents...")
+            await upload_batch(documents, batches)
+            uploaded_docs += len(documents)
+            with open(checkpoint_path, "w", encoding="utf-8") as cp:
+                json.dump({"last_row": row_index}, cp)
+
+        if os.path.exists(checkpoint_path):
+            os.remove(checkpoint_path)
+
+        total_processed = uploaded_docs + skipped_docs
+        print(f"Upload summary -> docs processed: {total_processed}, uploaded: {uploaded_docs}, skipped(resume): {skipped_docs}, batches: {batches}, retries: {retries_total}")
 
     async def is_index_empty(self) -> bool:
         """
