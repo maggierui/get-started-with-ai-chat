@@ -11,6 +11,8 @@ import argparse
 import asyncio
 import os
 from pathlib import Path
+import hashlib
+import json
 from azure.identity.aio import DefaultAzureCredential
 from azure.storage.blob.aio import BlobServiceClient
 from azure.ai.inference.aio import EmbeddingsClient
@@ -59,19 +61,27 @@ async def validate_index_alignment(endpoint: str, credential, index_name: str, e
         print("Existing index matches expected dimensions and semantic configuration; reuse is allowed.")
 
 
-async def summarize_blobs(storage_account: str, container: str, prefix: str, credential) -> tuple[int, int]:
-    """Return counts of all blobs and .md blobs for visibility before download."""
+async def summarize_blobs(storage_account: str, container: str, prefix: str, credential) -> tuple[int, int, str]:
+    """Return counts and a stable hash of blob names/sizes for reuse checks."""
     storage_url = f"https://{storage_account}.blob.core.windows.net"
     total = 0
     markdown = 0
+    hash_acc = hashlib.sha256()
     async with BlobServiceClient(account_url=storage_url, credential=credential) as client:
         container_client = client.get_container_client(container)
+        blobs = []
         async for blob in container_client.list_blobs(name_starts_with=prefix or None):
+            blobs.append(blob)
+        # Sort for stable hashing regardless of service listing order
+        for blob in sorted(blobs, key=lambda b: b.name):
             total += 1
             if blob.name.lower().endswith('.md'):
                 markdown += 1
-    print(f"Blob inventory -> total: {total}, markdown: {markdown}, prefix: '{prefix or '[none]'}'")
-    return total, markdown
+            size = getattr(blob, "size", 0) or 0
+            hash_acc.update(f"{blob.name}:{size}".encode("utf-8"))
+    inventory_hash = hash_acc.hexdigest()
+    print(f"Blob inventory -> total: {total}, markdown: {markdown}, prefix: '{prefix or '[none]'}', hash: {inventory_hash}")
+    return total, markdown, inventory_hash
 
 
 def parse_args():
@@ -163,7 +173,7 @@ async def main(args):
     )
 
     # Summarize blobs before any download to catch scope issues early
-    await summarize_blobs(
+    _, _, inventory_hash = await summarize_blobs(
         storage_account=storage_account_name,
         container=container_name,
         prefix=blob_prefix,
@@ -239,15 +249,40 @@ async def main(args):
     print("\n4. Building embeddings from downloaded documents...")
     embeddings_file = args.embeddings_file
 
-    if os.path.exists(embeddings_file) and not args.force_embeddings:
-        print(f"  Found existing embeddings file: {embeddings_file}. Skipping generation.")
-    else:
+    manifest_path = embeddings_file + ".manifest.json"
+    reuse_embeddings = os.path.exists(embeddings_file) and not args.force_embeddings
+    manifest = None
+    if os.path.exists(manifest_path):
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as mf:
+                manifest = json.load(mf)
+        except Exception:
+            manifest = None
+
+    if reuse_embeddings:
+        if manifest and manifest.get("inventory_hash") == inventory_hash:
+            print(f"  Reusing existing embeddings file: {embeddings_file} (inventory hash match)")
+        else:
+            reason = "manifest mismatch" if manifest else "missing manifest"
+            print(f"  Existing embeddings file found but {reason}; regenerating to align with current blobs.")
+            reuse_embeddings = False
+
+    if not reuse_embeddings:
         await search_index_manager.build_embeddings_file(
             input_directory=str(download_dir),
             output_file=embeddings_file,
             sentences_per_embedding=4
         )
         print(f"  Embeddings saved to: {embeddings_file}")
+        new_manifest = {
+            "inventory_hash": inventory_hash,
+            "container": container_name,
+            "prefix": blob_prefix,
+            "blob_account": storage_account_name,
+        }
+        with open(manifest_path, "w", encoding="utf-8") as mf:
+            json.dump(new_manifest, mf, indent=2)
+        print(f"  Wrote manifest: {manifest_path}")
     
     # Create the index
     print("\n5. Creating search index...")
