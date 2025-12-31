@@ -117,6 +117,7 @@ async def chat_stream_handler(
         retrieval_mode = "natural"
         # Use RAG model, only if we were provided index and we have found a context there.
         if search_index_manager is not None:
+            logger.info("[chat] use_metadata_inference=%s", getattr(chat_request, "use_metadata_inference", None))
             try:
                 context, sources, retrieval_mode = await search_index_manager.search(chat_request)
                 if context:

@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 import fastapi
 from azure.ai.projects.aio import AIProjectClient
 from azure.ai.inference.aio import ChatCompletionsClient, EmbeddingsClient
+from azure.core.credentials import AzureKeyCredential
 from azure.identity import AzureDeveloperCliCredential, ManagedIdentityCredential
 from dotenv import load_dotenv
 from fastapi.staticfiles import StaticFiles
@@ -81,9 +82,23 @@ async def lifespan(app: fastapi.FastAPI):
         embed_dimensions = int(os.getenv('AZURE_AI_EMBED_DIMENSIONS'))
         
     if endpoint and os.getenv('AZURE_AI_SEARCH_INDEX_NAME') and os.getenv('AZURE_AI_EMBED_DEPLOYMENT_NAME'):
+        search_key = os.getenv('AZURE_SEARCH_ADMIN_KEY')
+        if search_key:
+            logger.info("Using search admin key for SearchClient authentication")
+            search_credential = AzureKeyCredential(search_key)
+        else:
+            logger.info("Using token credential for SearchClient authentication")
+            search_credential = azure_credential
+        logger.info(
+            "Search config -> endpoint: %s, index: %s, semantic config: %s, include metadata: %s",
+            endpoint,
+            os.getenv('AZURE_AI_SEARCH_INDEX_NAME'),
+            os.getenv('AZURE_AI_SEARCH_SEMANTIC_CONFIG_NAME'),
+            os.getenv('AZURE_SEARCH_INCLUDE_METADATA_FIELDS'),
+        )
         search_index_manager = SearchIndexManager(
             endpoint = endpoint,
-            credential = azure_credential,
+            credential = search_credential,
             index_name = os.getenv('AZURE_AI_SEARCH_INDEX_NAME'),
             dimensions = embed_dimensions,
             model = os.getenv('AZURE_AI_EMBED_DEPLOYMENT_NAME'),
@@ -110,7 +125,17 @@ async def lifespan(app: fastapi.FastAPI):
 
 def create_app():
     if not os.getenv("RUNNING_IN_PRODUCTION"):
-        load_dotenv(override=True)
+        # Load envs in a deterministic order so .azure overrides the sample src/.env
+        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        azd_env_path = os.path.join(repo_root, ".azure", "lmc-doc-chat", ".env")
+        root_env_path = os.path.join(repo_root, ".env")
+
+        if os.path.exists(azd_env_path):
+            load_dotenv(dotenv_path=azd_env_path, override=True)
+        if os.path.exists(root_env_path):
+            load_dotenv(dotenv_path=root_env_path, override=False)
+        # Finally load any cwd .env without overriding higher-priority values
+        load_dotenv(override=False)
 
     global logger
     logger = get_logger(

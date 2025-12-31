@@ -1,4 +1,4 @@
-import { ReactNode, useState, useMemo } from "react";
+import { ReactNode, useState, useMemo, useEffect, useRef } from "react";
 import {
   Body1,
   Button,
@@ -51,6 +51,23 @@ export function AgentPreview({ agentDetails }: IAgentPreviewProps): ReactNode {
   const [retrievalMode, setRetrievalMode] = useState<"natural" | "metadata_inference">("natural");
   const [currentQuestion, setCurrentQuestion] = useState<string>("");
   const [useMetadataInference, setUseMetadataInference] = useState(false);
+  const useMetadataInferenceRef = useRef(useMetadataInference);
+
+  useEffect(() => {
+    useMetadataInferenceRef.current = useMetadataInference;
+  }, [useMetadataInference]);
+
+  useEffect(() => {
+    console.log("[ChatClient] useMetadataInference changed:", useMetadataInference);
+  }, [useMetadataInference]);
+
+  const indexInfo = useMemo(() => {
+    const info = (window as any)?.__INDEX_INFO__ || {};
+    return {
+      name: info.name || "",
+      semantic: info.semantic || "",
+    };
+  }, []);
 
 
 
@@ -93,12 +110,14 @@ export function AgentPreview({ agentDetails }: IAgentPreviewProps): ReactNode {
         role: item.role,
         content: item.content,
       }));
-      const postData = {messages, use_metadata_inference: useMetadataInference};
+      const useInference = useMetadataInferenceRef.current;
+      const postData = {messages, use_metadata_inference: useInference};
+      console.log("[ChatClient] Sending chat with metadata inference:", useInference);
       // IMPORTANT: Add credentials: 'include' if server cookies are critical
       // and if your backend is on the same domain or properly configured for cross-site cookies.
 
       setIsResponding(true);
-      setRetrievalMode(useMetadataInference ? "metadata_inference" : "natural");
+      setRetrievalMode(useInference ? "metadata_inference" : "natural");
       setSources([]);
       const response = await fetch("/chat", {
         method: "POST",
@@ -350,14 +369,6 @@ export function AgentPreview({ agentDetails }: IAgentPreviewProps): ReactNode {
         </a>
       ),
     },
-    {
-      key: "feedback",
-      children: "Send Feedback",
-      onClick: () => {
-        // Handle send feedback click
-        alert("Thank you for your feedback!");
-      },
-    },
   ];
 
   const chatContext = useMemo(
@@ -430,6 +441,9 @@ export function AgentPreview({ agentDetails }: IAgentPreviewProps): ReactNode {
           mode={retrievalMode}
           question={currentQuestion}
           sources={sources}
+          indexName={indexInfo.name}
+          semanticConfig={indexInfo.semantic}
+          metadataInferenceEnabled={useMetadataInference}
         />
       </div>
 

@@ -16,11 +16,25 @@ interface ISourcesPanelProps {
   sources: ISource[];
   question: string;
   mode?: RetrievalMode;
+  indexName?: string;
+  semanticConfig?: string;
+  metadataInferenceEnabled?: boolean;
 }
 
-export function SourcesPanel({ sources, question, mode = "natural" }: ISourcesPanelProps): ReactNode {
+export function SourcesPanel({
+  sources,
+  question,
+  mode = "natural",
+  indexName,
+  semanticConfig,
+  metadataInferenceEnabled,
+}: ISourcesPanelProps): ReactNode {
   const handleSaveChunks = () => {
     if (sources.length === 0) return;
+
+    const metadataInferenceOn = (metadataInferenceEnabled !== undefined)
+      ? metadataInferenceEnabled
+      : mode === "metadata_inference";
 
     // Create filename from first 5-6 words of question
     const words = question.trim().split(/\s+/).slice(0, 6);
@@ -31,7 +45,7 @@ export function SourcesPanel({ sources, question, mode = "natural" }: ISourcesPa
       : `retrieved-chunks-${timestamp}.txt`;
 
     // Create formatted content with question and ranked chunks
-    const header = `Question: ${question}\nMode: ${mode}\nTimestamp: ${timestamp}\n${'='.repeat(80)}\n\n`;
+    const header = `Question: ${question}\nMode: ${mode}\nMetadata inference: ${metadataInferenceOn ? 'on' : 'off'}\nIndex: ${indexName || 'Unknown'}\nSemantic config: ${semanticConfig || 'None'}\nTimestamp: ${timestamp}\n${'='.repeat(80)}\n\n`;
     const chunksContent = sources.map(source => 
       `=== Rank #${source.rank} ===\nTitle: ${source.title}\nChunk ID: ${source.chunk_id}\n\n${source.content}\n\n`
     ).join('\n');

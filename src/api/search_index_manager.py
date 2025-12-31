@@ -80,6 +80,9 @@ class SearchIndexManager:
         self._model = model
         self._client = None
         self._semantic_config_name = semantic_config_name
+        self._include_metadata_fields = os.getenv("AZURE_SEARCH_INCLUDE_METADATA_FIELDS", "true").lower() == "true"
+        self._available_fields: Optional[set[str]] = None
+        self._available_metadata_fields: Optional[list[tuple[str, str, bool]]] = None
 
     def _get_client(self):
         """Get search client if it is absent."""
@@ -87,6 +90,27 @@ class SearchIndexManager:
             self._client = SearchClient(
                 endpoint=self._endpoint, index_name=self._index.name, credential=self._credential)
         return self._client
+
+    def _refresh_available_fields(self) -> None:
+        """Cache available fields for the currently loaded index."""
+        if self._index is None:
+            self._available_fields = set()
+            self._available_metadata_fields = []
+            return
+
+        fields = getattr(self._index, "fields", []) or []
+        self._available_fields = {getattr(f, "name", None) for f in fields if getattr(f, "name", None)}
+        self._available_metadata_fields = [
+            (raw_name, field_name, is_collection)
+            for raw_name, field_name, is_collection in self.METADATA_FIELDS
+            if (self._include_metadata_fields and field_name in self._available_fields)
+        ]
+
+    def _get_available_metadata_fields(self) -> list[tuple[str, str, bool]]:
+        """Return metadata fields that exist in the current index (or empty)."""
+        if self._available_metadata_fields is None:
+            self._refresh_available_fields()
+        return self._available_metadata_fields or []
 
     @staticmethod
     def _clean_markdown_images(text: str) -> str:
@@ -116,6 +140,7 @@ class SearchIndexManager:
         :return: Tuple of (context string, list of source documents with metadata, retrieval mode).
         """
         self._raise_if_no_index()
+        self._refresh_available_fields()
         retrieval_mode = "metadata_inference" if getattr(message, "use_metadata_inference", False) else "natural"
         embedded_question = (await self._embeddings_client.embed(
             input=message.messages[-1].content,
@@ -132,7 +157,11 @@ class SearchIndexManager:
         vector_query = VectorizedQuery(vector=embedded_question, k_nearest_neighbors=5, fields=vector_field)
         
         # Use semantic search only if semantic configuration is available
-        select_fields = [content_field, 'title', 'chunk_id'] + [field_name for _, field_name, _ in self.METADATA_FIELDS]
+        metadata_fields = self._get_available_metadata_fields()
+        select_fields = [content_field, 'title', 'chunk_id'] + [field_name for _, field_name, _ in metadata_fields]
+        if self._available_fields:
+            # Keep only fields that exist in the index to avoid query errors
+            select_fields = [field for field in select_fields if field in self._available_fields]
         search_params = {
             "search_text": search_text,
             "vector_queries": [vector_query],
@@ -157,13 +186,17 @@ class SearchIndexManager:
             # Clean markdown images from chunks to avoid LLM API errors
             cleaned_chunk = self._clean_markdown_images(content)
             context_chunks.append(cleaned_chunk)
+            metadata_payload = {
+                field_name: result.get(field_name)
+                for _, field_name, _ in metadata_fields
+            }
             sources.append({
                 'rank': idx + 1,
                 'title': result.get('title', 'Unknown'),
                 # Prefer chunk_id if present, otherwise fall back to embedId for legacy indexes
                 'chunk_id': result.get('chunk_id') or result.get('embedId', ''),
                 'content': content,  # Send full content without truncation
-                **{field_name: result.get(field_name) for _, field_name, _ in self.METADATA_FIELDS}
+                **metadata_payload
             })
             idx += 1
         
@@ -177,6 +210,7 @@ class SearchIndexManager:
         :param batch_size: The number of documents to upload in a single batch.
         """
         self._raise_if_no_index()
+        self._refresh_available_fields()
         checkpoint_path = embeddings_file + ".upload.chk"
         resume_from = 0
         if os.path.exists(checkpoint_path):
@@ -223,6 +257,7 @@ class SearchIndexManager:
 
         with open(embeddings_file, newline='', encoding="utf-8") as fp:
             reader = csv.DictReader(fp)
+            metadata_fields = self._get_available_metadata_fields()
             for row in reader:
                 if row_index < resume_from:
                     row_index += 1
@@ -235,7 +270,7 @@ class SearchIndexManager:
                     'text_vector': json.loads(row['embedding'])
                 }
 
-                for _, field_name, is_collection in self.METADATA_FIELDS:
+                for _, field_name, is_collection in metadata_fields:
                     value = row.get(field_name, "")
                     if not value:
                         continue
@@ -344,7 +379,9 @@ class SearchIndexManager:
                 self._credential,
                 self._index_name,
                 vector_index_dimensions,
-                self._semantic_config_name)
+                self._semantic_config_name,
+                self._include_metadata_fields)
+        self._refresh_available_fields()
 
     @staticmethod
     async def index_exists(
@@ -375,6 +412,7 @@ class SearchIndexManager:
             index_name: str,
             dimensions: int,
             semantic_config_name: str = "semantic-docs",
+            include_metadata_fields: bool = True,
         ) -> SearchIndex:
         """
         Get o create the search index.
@@ -398,7 +436,8 @@ class SearchIndexManager:
                 credential=credential,
                 index_name=index_name,
                 dimensions=dimensions,
-                semantic_config_name=semantic_config_name
+                semantic_config_name=semantic_config_name,
+                include_metadata_fields=include_metadata_fields
             )
         return index
 
@@ -426,8 +465,10 @@ class SearchIndexManager:
                 credential=self._credential,
                 index_name=self._index_name,
                 dimensions=vector_index_dimensions,
-                semantic_config_name=self._semantic_config_name
+                semantic_config_name=self._semantic_config_name,
+                include_metadata_fields=self._include_metadata_fields
             )
+            self._refresh_available_fields()
             return True
         except HttpResponseError:
             return False
@@ -439,7 +480,8 @@ class SearchIndexManager:
         credential: Union[AsyncTokenCredential, AzureKeyCredential],
         index_name: str,
         dimensions: int,
-        semantic_config_name: str = "semantic-docs") -> SearchIndex:
+        semantic_config_name: str = "semantic-docs",
+        include_metadata_fields: bool = True) -> SearchIndex:
         """Create the index with semantic search enabled."""
         async with SearchIndexClient(endpoint=endpoint, credential=credential) as ix_client:
             fields = [
@@ -453,15 +495,19 @@ class SearchIndexManager:
                 ),
                 SearchField(name="chunk", type=SearchFieldDataType.String, hidden=False, searchable=True),
                 SimpleField(name="title", type=SearchFieldDataType.String, searchable=True, filterable=True),
-                SimpleField(name="ms_date", type=SearchFieldDataType.String, searchable=True, filterable=True, sortable=True),
-                SimpleField(name="customer_intent", type=SearchFieldDataType.String, searchable=True, filterable=True),
-                SimpleField(name="ms_topic", type=SearchFieldDataType.String, searchable=True, filterable=True),
-                SimpleField(name="ms_service", type=SearchFieldDataType.String, searchable=True, filterable=True),
-                SearchField(name="ms_collection", type=SearchFieldDataType.Collection(SearchFieldDataType.String), searchable=True, filterable=True),
-                SimpleField(name="description", type=SearchFieldDataType.String, searchable=True),
-                SimpleField(name="audience", type=SearchFieldDataType.String, searchable=True, filterable=True),
-                SimpleField(name="ms_product", type=SearchFieldDataType.String, searchable=True, filterable=True),
             ]
+
+            if include_metadata_fields:
+                fields.extend([
+                    SimpleField(name="ms_date", type=SearchFieldDataType.String, searchable=True, filterable=True, sortable=True),
+                    SimpleField(name="customer_intent", type=SearchFieldDataType.String, searchable=True, filterable=True),
+                    SimpleField(name="ms_topic", type=SearchFieldDataType.String, searchable=True, filterable=True),
+                    SimpleField(name="ms_service", type=SearchFieldDataType.String, searchable=True, filterable=True),
+                    SearchField(name="ms_collection", type=SearchFieldDataType.Collection(SearchFieldDataType.String), searchable=True, filterable=True),
+                    SimpleField(name="description", type=SearchFieldDataType.String, searchable=True),
+                    SimpleField(name="audience", type=SearchFieldDataType.String, searchable=True, filterable=True),
+                    SimpleField(name="ms_product", type=SearchFieldDataType.String, searchable=True, filterable=True),
+                ])
             
             # Configure vector search
             vector_search = VectorSearch(
@@ -474,9 +520,10 @@ class SearchIndexManager:
             semantic_search = None
             if semantic_config_name:
                 content_fields = [SemanticField(field_name="chunk")]
-                for _, field_name, _ in SearchIndexManager.METADATA_FIELDS:
-                    if field_name != "title":
-                        content_fields.append(SemanticField(field_name=field_name))
+                if include_metadata_fields:
+                    for _, field_name, _ in SearchIndexManager.METADATA_FIELDS:
+                        if field_name not in ("title",):
+                            content_fields.append(SemanticField(field_name=field_name))
 
                 semantic_config = SemanticConfiguration(
                     name=semantic_config_name,
@@ -600,6 +647,11 @@ class SearchIndexManager:
         page_overlap_length = int(os.getenv("PAGE_OVERLAP_LENGTH", "500"))
         sentence_chunk_overlap = int(os.getenv("SENTENCE_CHUNK_OVERLAP", "0"))
         truncated_chunks = 0
+        metadata_fields = (
+            self._get_available_metadata_fields()
+            if self._available_metadata_fields is not None
+            else (self.METADATA_FIELDS if self._include_metadata_fields else [])
+        )
 
         # Recursively pick up markdown files in nested folders (e.g., blob prefix subdirectories)
         globs = glob.glob(os.path.join(input_directory, '**', '*.md'), recursive=True)
@@ -610,7 +662,7 @@ class SearchIndexManager:
                 content = f.read()
 
             metadata, body = self._extract_front_matter(content)
-            prefix_lines, normalized_metadata = self._normalize_metadata(metadata)
+            prefix_lines, normalized_metadata = (self._normalize_metadata(metadata) if self._include_metadata_fields else ([], {}))
             prefix_text = "\n".join(prefix_lines) if prefix_lines else ""
 
             if chunk_mode == "pages":
@@ -676,7 +728,7 @@ class SearchIndexManager:
         total_chunks = len(chunks)
         total_batches = (total_chunks + batch_size - 1) // batch_size
         print(f"Embedding {total_chunks} chunks across {total_batches} batches (batch size {batch_size})")
-        fieldnames = ['chunk_id', 'chunk', 'embedding'] + [field_name for _, field_name, _ in self.METADATA_FIELDS]
+        fieldnames = ['chunk_id', 'chunk', 'embedding'] + [field_name for _, field_name, _ in metadata_fields]
         with open(output_file, 'w', encoding="utf-8", newline='') as fp:
             writer = csv.DictWriter(fp, fieldnames=fieldnames)
             writer.writeheader()
@@ -726,7 +778,7 @@ class SearchIndexManager:
                         'chunk': chunk['text'],
                         'embedding': json.dumps(embedding)
                     }
-                    for _, field_name, _ in self.METADATA_FIELDS:
+                    for _, field_name, _ in metadata_fields:
                         row[field_name] = chunk['metadata'].get(field_name, "")
                     writer.writerow(row)
 
