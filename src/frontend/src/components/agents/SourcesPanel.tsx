@@ -18,6 +18,7 @@ interface ISourcesPanelProps {
   mode?: RetrievalMode;
   indexName?: string;
   semanticConfig?: string;
+  indexDescription?: string;
   metadataInferenceEnabled?: boolean;
 }
 
@@ -27,6 +28,7 @@ export function SourcesPanel({
   mode = "natural",
   indexName,
   semanticConfig,
+  indexDescription,
   metadataInferenceEnabled,
 }: ISourcesPanelProps): ReactNode {
   const handleSaveChunks = () => {
@@ -45,7 +47,7 @@ export function SourcesPanel({
       : `retrieved-chunks-${timestamp}.txt`;
 
     // Create formatted content with question and ranked chunks
-    const header = `Question: ${question}\nMode: ${mode}\nMetadata inference: ${metadataInferenceOn ? 'on' : 'off'}\nIndex: ${indexName || 'Unknown'}\nSemantic config: ${semanticConfig || 'None'}\nTimestamp: ${timestamp}\n${'='.repeat(80)}\n\n`;
+    const header = `Question: ${question}\nMode: ${mode}\nMetadata inference: ${metadataInferenceOn ? 'on' : 'off'}\nIndex: ${indexName || 'Unknown'}\nSemantic config: ${semanticConfig || 'None'}\nIndex description: ${indexDescription || 'None'}\nTimestamp: ${timestamp}\n${'='.repeat(80)}\n\n`;
     const chunksContent = sources.map(source => 
       `=== Rank #${source.rank} ===\nTitle: ${source.title}\nChunk ID: ${source.chunk_id}\n\n${source.content}\n\n`
     ).join('\n');

@@ -25,6 +25,10 @@ from azure.search.documents.indexes.models import (
     SemanticField,
     SemanticPrioritizedFields,
     SemanticSearch,
+    ScoringProfile,
+    TagScoringFunction,
+    TagScoringParameters,
+    ScoringFunctionAggregation,
 )
 from azure.ai.inference.aio import EmbeddingsClient, ChatCompletionsClient
 from openai import AsyncAzureOpenAI
@@ -156,22 +160,25 @@ class SearchIndexManager:
                 inferred_metadata = await self._metadata_inference.infer_metadata(message.messages[-1].content)
                 print(f"Inferred metadata: {inferred_metadata}")
 
-        # Build OData filter from inferred metadata
-        filter_clauses = []
-        # if inferred_metadata:
-        #     # Get list of available metadata fields in the index to ensure we only filter on existing fields
-        #     available_meta_fields = {fname for _, fname, _ in self._get_available_metadata_fields()}
-            
-        #     for field, value in inferred_metadata.items():
-        #         # Only apply filter if the field exists in the index and value is not null/empty
-        #         if value and field in available_meta_fields:
-        #             # Escape single quotes in value to prevent OData injection/errors
-        #             clean_value = value.replace("'", "''")
-        #             filter_clauses.append(f"{field} eq '{clean_value}'")
+        # Build scoring parameters from inferred metadata
+        scoring_profile = None
+        scoring_parameters = []
         
-        filter_expression = " and ".join(filter_clauses) if filter_clauses else None
-        if filter_expression:
-            print(f"Applying search filter: {filter_expression}")
+        if inferred_metadata:
+            scoring_profile = "metadata-boost"
+            if inferred_metadata.get("ms_topic"):
+                scoring_parameters.append(f"topicTags-{inferred_metadata['ms_topic']}")
+            else:
+                # Pass a dummy value if not present, as all parameters defined in the profile are required
+                scoring_parameters.append("topicTags-none")
+                
+            if inferred_metadata.get("audience"):
+                scoring_parameters.append(f"audienceTags-{inferred_metadata['audience']}")
+            else:
+                scoring_parameters.append("audienceTags-none")
+            
+            if scoring_parameters:
+                print(f"Applying scoring profile: {scoring_profile} with parameters: {scoring_parameters}")
 
         embedded_question = (await self._embeddings_client.embed(
             input=message.messages[-1].content,
@@ -200,8 +207,9 @@ class SearchIndexManager:
             "top": 5
         }
         
-        if filter_expression:
-            search_params["filter"] = filter_expression
+        if scoring_profile and scoring_parameters:
+            search_params["scoring_profile"] = scoring_profile
+            search_params["scoring_parameters"] = scoring_parameters
         
         # Only add semantic parameters if semantic config name is provided
         if self._semantic_config_name:
@@ -568,11 +576,34 @@ class SearchIndexManager:
                 )
                 semantic_search = SemanticSearch(configurations=[semantic_config])
             
+            # Configure scoring profiles
+            scoring_profiles = []
+            if include_metadata_fields:
+                scoring_profiles.append(
+                    ScoringProfile(
+                        name="metadata-boost",
+                        functions=[
+                            TagScoringFunction(
+                                field_name="ms_topic",
+                                boost=3.0,
+                                parameters=TagScoringParameters(tags_parameter="topicTags")
+                            ),
+                            TagScoringFunction(
+                                field_name="audience",
+                                boost=2.0,
+                                parameters=TagScoringParameters(tags_parameter="audienceTags")
+                            )
+                        ],
+                        function_aggregation=ScoringFunctionAggregation.SUM
+                    )
+                )
+
             search_index = SearchIndex(
                 name=index_name, 
                 fields=fields, 
                 vector_search=vector_search,
-                semantic_search=semantic_search
+                semantic_search=semantic_search,
+                scoring_profiles=scoring_profiles
             )
             new_index = await ix_client.create_index(search_index)
         return new_index

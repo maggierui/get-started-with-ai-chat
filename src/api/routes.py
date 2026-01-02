@@ -4,6 +4,7 @@
 import json
 import logging
 import os
+from pathlib import Path
 from typing import Dict
 
 import fastapi
@@ -56,7 +57,7 @@ logger = get_logger(
 )
 
 router = fastapi.APIRouter()
-templates = Jinja2Templates(directory="api/templates")
+templates = Jinja2Templates(directory=Path(__file__).resolve().parent / "templates")
 
 
 # Accessors to get app state

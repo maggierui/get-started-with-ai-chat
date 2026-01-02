@@ -66,6 +66,7 @@ export function AgentPreview({ agentDetails }: IAgentPreviewProps): ReactNode {
     return {
       name: info.name || "",
       semantic: info.semantic || "",
+      description: info.description || "",
     };
   }, []);
 
@@ -443,6 +444,7 @@ export function AgentPreview({ agentDetails }: IAgentPreviewProps): ReactNode {
           sources={sources}
           indexName={indexInfo.name}
           semanticConfig={indexInfo.semantic}
+          indexDescription={indexInfo.description}
           metadataInferenceEnabled={useMetadataInference}
         />
       </div>

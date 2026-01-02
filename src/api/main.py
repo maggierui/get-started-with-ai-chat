@@ -4,6 +4,7 @@
 import contextlib
 import logging
 import os
+from pathlib import Path
 from typing import Union
 from urllib.parse import urlparse
 
@@ -166,7 +167,8 @@ def create_app():
         logger.info("Tracing is not enabled")
 
     app = fastapi.FastAPI(lifespan=lifespan)
-    app.mount("/static", StaticFiles(directory="api/static"), name="static")
+    static_dir = Path(__file__).resolve().parent / "static"
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
     from . import routes  # noqa
 
