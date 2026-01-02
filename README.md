@@ -51,8 +51,16 @@ Here is a screenshot showing the chatting web application with requests and resp
 
 ### Metadata inference: how search works
 
-- **Natural mode (toggle off)**: The query is embedded and sent to Azure AI Search using hybrid vector + semantic search across `chunk`, `title`, and available metadata fields. Results are ranked semantically and returned as context/sources.
-- **Metadata inference mode (toggle on)**: The client tells the API to enable metadata inference. The backend sends the same hybrid search but also leverages inferred metadata hints to improve matching on fields such as `ms_service`, `ms_topic`, `ms_date`, collections, and audience when those fields exist in the index. This often yields tighter, more targeted results for domain-specific queries.
+- **Index schema**: Metadata fields (title, ms_date, customer_intent, ms_topic, ms_service, ms_collection, description, audience, ms_product) are searchable/filterable and included in the semantic content fields in the index definition (search_index_manager.py:486-535).
+
+During embedding/build: Each chunk’s text is prefixed with any available metadata (e.g., ms.service: sharepoint) before embedding (search_index_manager.py:583-654). That means the vector stored in text_vector already “bakes in” those metadata values, so vector similarity can reflect them.
+- **Natural mode (toggle off)**: The query does a hybrid vector + semantic search with no extra filters/boosts. It:
+-- Embeds the user question and runs VectorizedQuery over text_vector.
+-- Uses search_text with semantic ranking if a semantic config is present (search_index_manager.py:135-203).
+-- Selects/returns the metadata fields for display, but does not add OData filters or scoring profiles.
+-- Because the semantic configuration’s content_fields include the metadata fields, the semantic reranker can consider those fields’ values in ranking, but there is no explicit weighting/boost beyond that default inclusion.
+- **Metadata inference mode (toggle on)**: The client tells the API to enable metadata inference. The backend uses an LLM to analyze the user's query and extract specific metadata fields (`ms_service`, `ms_product`, `ms_topic`, `audience`). These extracted values are converted into strict OData filters (e.g., `ms_service eq 'SharePoint'`) and applied to the search query. This restricts results to documents that explicitly match the inferred intent, yielding tighter, more targeted results for domain-specific queries.
+  - *Note*: Fields such as `description`, `ms_collection`, and `customer_intent` are intentionally excluded from this strict filtering mechanism. Due to their free-text or variable nature, these fields are more effectively handled by the standard hybrid keyword and semantic search scoring rather than strict equality filters.
 - **How to use**: Open **Settings → Retrieval → Metadata inference** in the UI. The current mode is displayed above the retrieved sources, and the saved chunk file records whether metadata inference was on.
 - **When to use**: Turn it **on** when your corpus has rich metadata and you want sharper matches; leave it **off** for more open-ended or exploratory queries.
 

@@ -26,10 +26,11 @@ from azure.search.documents.indexes.models import (
     SemanticPrioritizedFields,
     SemanticSearch,
 )
-from azure.ai.inference.aio import EmbeddingsClient
+from azure.ai.inference.aio import EmbeddingsClient, ChatCompletionsClient
 from openai import AsyncAzureOpenAI
 from azure.core.exceptions import ResourceNotFoundError, HttpResponseError
 from .util import ChatRequest
+from .metadata_inference import MetadataInference
 
 
 class SearchIndexManager:
@@ -68,6 +69,8 @@ class SearchIndexManager:
             dimensions: Optional[int],
             model: str,
             embeddings_client: Union[EmbeddingsClient, AsyncAzureOpenAI],
+            chat_client: Optional[ChatCompletionsClient] = None,
+            chat_model: Optional[str] = None,
             semantic_config_name: str = "semantic-docs",
         ) -> None:
         """Constructor."""
@@ -83,6 +86,7 @@ class SearchIndexManager:
         self._include_metadata_fields = os.getenv("AZURE_SEARCH_INCLUDE_METADATA_FIELDS", "true").lower() == "true"
         self._available_fields: Optional[set[str]] = None
         self._available_metadata_fields: Optional[list[tuple[str, str, bool]]] = None
+        self._metadata_inference = MetadataInference(chat_client, chat_model) if chat_client and chat_model else None
 
     def _get_client(self):
         """Get search client if it is absent."""
@@ -141,7 +145,34 @@ class SearchIndexManager:
         """
         self._raise_if_no_index()
         self._refresh_available_fields()
-        retrieval_mode = "metadata_inference" if getattr(message, "use_metadata_inference", False) else "natural"
+        
+        retrieval_mode = "natural"
+        inferred_metadata = {}
+        
+        if getattr(message, "use_metadata_inference", False):
+            retrieval_mode = "metadata_inference"
+            if self._metadata_inference:
+                print(f"Inferring metadata for query: {message.messages[-1].content}")
+                inferred_metadata = await self._metadata_inference.infer_metadata(message.messages[-1].content)
+                print(f"Inferred metadata: {inferred_metadata}")
+
+        # Build OData filter from inferred metadata
+        filter_clauses = []
+        if inferred_metadata:
+            # Get list of available metadata fields in the index to ensure we only filter on existing fields
+            available_meta_fields = {fname for _, fname, _ in self._get_available_metadata_fields()}
+            
+            for field, value in inferred_metadata.items():
+                # Only apply filter if the field exists in the index and value is not null/empty
+                if value and field in available_meta_fields:
+                    # Escape single quotes in value to prevent OData injection/errors
+                    clean_value = value.replace("'", "''")
+                    filter_clauses.append(f"{field} eq '{clean_value}'")
+        
+        filter_expression = " and ".join(filter_clauses) if filter_clauses else None
+        if filter_expression:
+            print(f"Applying search filter: {filter_expression}")
+
         embedded_question = (await self._embeddings_client.embed(
             input=message.messages[-1].content,
             dimensions=self._dimensions,
@@ -168,6 +199,9 @@ class SearchIndexManager:
             "select": select_fields,
             "top": 5
         }
+        
+        if filter_expression:
+            search_params["filter"] = filter_expression
         
         # Only add semantic parameters if semantic config name is provided
         if self._semantic_config_name:

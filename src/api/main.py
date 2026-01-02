@@ -103,6 +103,8 @@ async def lifespan(app: fastapi.FastAPI):
             dimensions = embed_dimensions,
             model = os.getenv('AZURE_AI_EMBED_DEPLOYMENT_NAME'),
             embeddings_client=embed,
+            chat_client=chat,
+            chat_model=os.environ["AZURE_AI_CHAT_DEPLOYMENT_NAME"],
             semantic_config_name=os.getenv('AZURE_AI_SEARCH_SEMANTIC_CONFIG_NAME', 'semantic-docs')
         )
         # Create index and upload the documents only if index does not exist.
