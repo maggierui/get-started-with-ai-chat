@@ -62,7 +62,7 @@ During embedding/build: Each chunk’s text is prefixed with any available metad
 - **Metadata inference mode (toggle on)**: The client tells the API to enable metadata inference. The backend uses an LLM to analyze the user's query and extract specific metadata fields (`ms_topic`, `audience`). 
   - *Note*: Currently, strict filtering based on these fields is disabled to avoid zero-result scenarios caused by metadata mismatches (e.g., inferred "SharePoint" vs actual "sharepoint-online"). Future iterations may use these fields for scoring profiles or boosting.
 - **How to use**: Open **Settings → Retrieval → Metadata inference** in the UI. The current mode is displayed above the retrieved sources, and the saved chunk file records whether metadata inference was on.
-- **Save Chunks**: When you click "Save Chunks" in the UI, the downloaded text file now includes the **Index description** for each chunk, providing better context about the source of the retrieved information.
+- **Save Chunks**: When you click "Save Chunks" in the UI, the downloaded text file now includes a **summary list of titles and chunk IDs** at the top, the **Model** name, and the **Index description**, providing comprehensive context about the retrieval.
 - **When to use**: Turn it **on** when your corpus has rich metadata and you want sharper matches; leave it **off** for more open-ended or exploratory queries.
 
 **WARNING**: This template, the application code and configuration it contains, has been built to showcase Microsoft Azure specific services and tools. We strongly advise our customers not to make this code part of their production environments without implementing or enabling additional security features.  
