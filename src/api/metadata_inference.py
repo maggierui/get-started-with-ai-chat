@@ -102,12 +102,23 @@ class MetadataInference:
                 ],
                 model=self._model_name,
                 temperature=0.0,  # Deterministic output
-                response_format={"type": "json_object"}
             )
             
             content = response.choices[0].message.content
             if not content:
                 return {}
+            
+            # Clean markdown code blocks if present
+            content = content.strip()
+            if content.startswith("```json"):
+                content = content[7:]
+            elif content.startswith("```"):
+                content = content[3:]
+            
+            if content.endswith("```"):
+                content = content[:-3]
+            
+            content = content.strip()
                 
             return json.loads(content)
         except Exception as e:
@@ -119,19 +130,15 @@ class MetadataInference:
         
         return f"""
 You are a metadata extraction assistant for a Microsoft documentation search system.
-Your goal is to analyze the user's query and extract the following metadata fields to filter search results:
+Your goal is to analyze the user's query and extract the following metadata fields:
 
-1. ms_service: The Microsoft service mentioned (e.g., "SharePoint", "Azure Functions", "Microsoft 365").
-2. ms_product: The specific product mentioned (e.g., "SharePoint Online", "Excel").
-3. ms_topic: The type of content requested. You MUST choose from the following allowed values based on the user's intent:
+1. ms_topic: The type of content requested. You MUST choose from the following allowed values based on the user's intent:
 {topic_list}
 
-4. audience: The target audience if explicitly mentioned (e.g., "Admin", "Developer", "ITPro").
+2. audience: The target audience if explicitly mentioned (e.g., "Admin", "Developer", "ITPro").
 
 Output JSON format:
 {{
-    "ms_service": "string or null",
-    "ms_product": "string or null",
     "ms_topic": "string or null",
     "audience": "string or null"
 }}
@@ -139,5 +146,4 @@ Output JSON format:
 Rules:
 - If a field cannot be confidently inferred, set it to null.
 - For ms_topic, prefer "how-to" for "how do I" questions, "overview" or "concept-article" for "what is" questions, "troubleshooting" for error/issue questions.
-- Be precise with ms_service and ms_product names based on your knowledge of Microsoft ecosystem.
 """

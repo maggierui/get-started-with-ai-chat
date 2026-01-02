@@ -158,16 +158,16 @@ class SearchIndexManager:
 
         # Build OData filter from inferred metadata
         filter_clauses = []
-        if inferred_metadata:
-            # Get list of available metadata fields in the index to ensure we only filter on existing fields
-            available_meta_fields = {fname for _, fname, _ in self._get_available_metadata_fields()}
+        # if inferred_metadata:
+        #     # Get list of available metadata fields in the index to ensure we only filter on existing fields
+        #     available_meta_fields = {fname for _, fname, _ in self._get_available_metadata_fields()}
             
-            for field, value in inferred_metadata.items():
-                # Only apply filter if the field exists in the index and value is not null/empty
-                if value and field in available_meta_fields:
-                    # Escape single quotes in value to prevent OData injection/errors
-                    clean_value = value.replace("'", "''")
-                    filter_clauses.append(f"{field} eq '{clean_value}'")
+        #     for field, value in inferred_metadata.items():
+        #         # Only apply filter if the field exists in the index and value is not null/empty
+        #         if value and field in available_meta_fields:
+        #             # Escape single quotes in value to prevent OData injection/errors
+        #             clean_value = value.replace("'", "''")
+        #             filter_clauses.append(f"{field} eq '{clean_value}'")
         
         filter_expression = " and ".join(filter_clauses) if filter_clauses else None
         if filter_expression:
