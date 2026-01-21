@@ -157,3 +157,5 @@ downloaded_documents/
 embeddings.csv
 .azure/
 embeddings.csv.manifest.json
+app.yaml
+sas_upload.txt

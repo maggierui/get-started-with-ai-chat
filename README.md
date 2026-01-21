@@ -26,7 +26,7 @@ Instructions are provided for deployment through GitHub Codespaces, VS Code Dev 
 
 - Documents are downloaded from Azure Storage using the configured `AZURE_STORAGE_BLOB_PREFIX` and `AZURE_STORAGE_CONTAINER_NAME` (see `.azure/lmc-doc-chat/.env`).
 - `rebuild_index.py` generates embeddings (`embeddings.csv`), creating `chunk_id` per chunk, and uploads them to Azure AI Search.
-- The search index uses vector + semantic search; the chat service queries it via `SearchIndexManager` to retrieve context for answers.
+- The search index uses vector + semantic search; the chat service queries it via `SearchIndexManager` to retrieve context for answers. The app now reads the index description and semantic configuration directly from environment variables (`INDEX_DESCRIPTION`, `AZURE_AI_SEARCH_SEMANTIC_CONFIG_NAME`, and `AZURE_AI_SEARCH_ENDPOINT`) so the header and semantic ranking always match the deployed search service.
 - The web chat app calls the API, which embeds the user question, runs hybrid search against the index, and returns responses with retrieved sources.
 
 ### Solution Architecture
@@ -64,6 +64,18 @@ During embedding/build: Each chunk’s text is prefixed with any available metad
 - **How to use**: Open **Settings → Retrieval → Metadata inference** in the UI. The current mode is displayed above the retrieved sources, and the saved chunk file records whether metadata inference was on.
 - **Save Chunks**: When you click "Save Chunks" in the UI, the downloaded text file now includes a **summary list of titles and chunk IDs** at the top, the **Model** name, and the **Index description**, providing comprehensive context about the retrieval.
 - **When to use**: Turn it **on** when your corpus has rich metadata and you want sharper matches; leave it **off** for more open-ended or exploratory queries.
+
+#### Deployment & configuration notes
+
+- Keep the following env vars in sync with your deployed search resource so the UI header and semantic ranking are correct: `AZURE_AI_SEARCH_ENDPOINT`, `AZURE_AI_SEARCH_INDEX_NAME`, `AZURE_AI_SEARCH_SEMANTIC_CONFIG_NAME`, and `INDEX_DESCRIPTION`.
+- The semantic configuration name must exist on the Azure AI Search index (for example `m365-no-metadata-1-semantic-configuration`). If you change it in Search, update the env value before deploying.
+- The Container App uses these env vars at startup; redeploy with `azd deploy api_and_frontend` after editing `.azure/<env>/.env` to propagate changes.
+
+#### Switching the search index
+
+1) Update `.azure/<env>/.env`: set `AZURE_AI_SEARCH_INDEX_NAME`, `AZURE_AI_SEARCH_SEMANTIC_CONFIG_NAME`, and `INDEX_DESCRIPTION` to match the target index (for example `m365_12_30` and `semantic-m365_12_30`).
+2) Redeploy to push the new settings: `azd deploy --service api_and_frontend --environment <env>`.
+3) Verify the Container App picked up the values (Portal → Container App → Application settings) or via CLI: `az containerapp show --name <app> --resource-group <rg> --query "properties.template.containers[0].env"` and confirm the three variables.
 
 **WARNING**: This template, the application code and configuration it contains, has been built to showcase Microsoft Azure specific services and tools. We strongly advise our customers not to make this code part of their production environments without implementing or enabling additional security features.  
 
