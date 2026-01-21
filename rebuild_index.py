@@ -25,6 +25,10 @@ from azure.core.exceptions import ResourceNotFoundError
 # Download NLTK data
 import nltk
 nltk.download('punkt_tab', quiet=True)
+from dotenv import load_dotenv
+
+# Load environment variables from the specific file
+load_dotenv(".azure/lmc-doc-chat/.env", override=True)
 
 
 async def validate_index_alignment(endpoint: str, credential, index_name: str, expected_dims: int, expected_semantic: str, vector_field: str) -> None:
@@ -224,7 +228,8 @@ async def main(args):
         embeddings_client = AsyncAzureOpenAI(
             azure_endpoint=project_base_endpoint,
             api_version="2023-05-15", 
-            azure_ad_token_provider=token_provider
+            azure_ad_token_provider=token_provider,
+            max_retries=10,
         )
     else:
         print(f"  Detected AI Project endpoint: {ai_project_endpoint}")

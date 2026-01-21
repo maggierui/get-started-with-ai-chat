@@ -15,6 +15,7 @@ type RetrievalMode = "natural" | "metadata_inference";
 interface ISourcesPanelProps {
   sources: ISource[];
   question: string;
+  answer?: string;
   mode?: RetrievalMode;
   indexName?: string;
   semanticConfig?: string;
@@ -25,6 +26,7 @@ interface ISourcesPanelProps {
 export function SourcesPanel({
   sources,
   question,
+  answer,
   mode = "natural",
   indexName,
   semanticConfig,
@@ -47,7 +49,10 @@ export function SourcesPanel({
       : `retrieved-chunks-${timestamp}.txt`;
 
     // Create formatted content with question and ranked chunks
-    const header = `Question: ${question}\nMode: ${mode}\nMetadata inference: ${metadataInferenceOn ? 'on' : 'off'}\nIndex: ${indexName || 'Unknown'}\nSemantic config: ${semanticConfig || 'None'}\nIndex description: ${indexDescription || 'None'}\nTimestamp: ${timestamp}\n${'='.repeat(80)}\n\n`;
+    const articleList = sources.map(source => `- ${source.title}`).join('\n');
+    const chunkIdList = sources.map(source => `- ${source.chunk_id}`).join('\n');
+
+    const header = `Question: ${question}\nMode: ${mode}\nMetadata inference: ${metadataInferenceOn ? 'on' : 'off'}\nIndex: ${indexName || 'Unknown'}\nSemantic config: ${semanticConfig || 'None'}\nIndex description: ${indexDescription || 'None'}\nTimestamp: ${timestamp}\n\nBrief list of retrieved sources:\n${articleList}\n\nList of Chunk IDs:\n${chunkIdList}\n\nAnswer:\n${answer || 'No answer available'}\n\n${'='.repeat(80)}\n\n`;
     const chunksContent = sources.map(source => 
       `=== Rank #${source.rank} ===\nTitle: ${source.title}\nChunk ID: ${source.chunk_id}\n\n${source.content}\n\n`
     ).join('\n');

@@ -441,6 +441,7 @@ export function AgentPreview({ agentDetails }: IAgentPreviewProps): ReactNode {
         <SourcesPanel
           mode={retrievalMode}
           question={currentQuestion}
+          answer={messageList[messageList.length - 1]?.isAnswer ? messageList[messageList.length - 1].content : undefined}
           sources={sources}
           indexName={indexInfo.name}
           semanticConfig={indexInfo.semantic}

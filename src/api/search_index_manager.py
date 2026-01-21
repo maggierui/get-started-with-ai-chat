@@ -793,11 +793,34 @@ class SearchIndexManager:
         total_chunks = len(chunks)
         total_batches = (total_chunks + batch_size - 1) // batch_size
         print(f"Embedding {total_chunks} chunks across {total_batches} batches (batch size {batch_size})")
+        
         fieldnames = ['chunk_id', 'chunk', 'embedding'] + [field_name for _, field_name, _ in metadata_fields]
-        with open(output_file, 'w', encoding="utf-8", newline='') as fp:
+        
+        # Check for existing progress to resume
+        start_index = 0
+        write_mode = 'w'
+        write_header = True
+        
+        if os.path.exists(output_file):
+            try:
+                with open(output_file, 'r', encoding="utf-8", newline='') as f:
+                    reader = csv.reader(f)
+                    existing_rows = sum(1 for _ in reader) - 1 # subtract header
+                    if existing_rows > 0:
+                        start_index = existing_rows
+                        write_mode = 'a'
+                        write_header = False
+                        print(f"Resuming embedding generation from chunk {start_index}/{total_chunks}")
+            except Exception as e:
+                print(f"Could not read existing file to resume: {e}")
+                start_index = 0
+
+        with open(output_file, write_mode, encoding="utf-8", newline='') as fp:
             writer = csv.DictWriter(fp, fieldnames=fieldnames)
-            writer.writeheader()
-            for i in range(0, len(chunks), batch_size):
+            if write_header:
+                writer.writeheader()
+            
+            for i in range(start_index, len(chunks), batch_size):
                 batch_number = (i // batch_size) + 1
                 batch = chunks[i:i+batch_size]
                 

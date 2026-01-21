@@ -14,6 +14,8 @@ param searchServiceEndpoint string
 param enableAzureMonitorTracing bool
 param azureTracingGenAIContentRecordingEnabled bool
 param projectEndpoint string
+param indexDescription string
+param semanticConfigName string
 
 resource apiIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: identityName
@@ -64,6 +66,14 @@ var env = [
   {
     name: 'AZURE_EXISTING_AIPROJECT_ENDPOINT'
     value: projectEndpoint
+  }
+  {
+    name: 'INDEX_DESCRIPTION'
+    value: indexDescription
+  }
+  {
+    name: 'AZURE_AI_SEARCH_SEMANTIC_CONFIG_NAME'
+    value: semanticConfigName
   }
 ]
 

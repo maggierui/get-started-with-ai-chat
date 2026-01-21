@@ -156,3 +156,4 @@ src/api/static/react/
 downloaded_documents/
 embeddings.csv
 .azure/
+embeddings.csv.manifest.json

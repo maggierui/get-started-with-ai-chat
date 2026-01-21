@@ -98,6 +98,15 @@
     "aiSearchIndexName": {
       "value": "${AZURE_AI_SEARCH_INDEX_NAME=index_sample}"
     },
+    "indexDescription": {
+      "value": "${INDEX_DESCRIPTION}"
+    },
+    "semanticConfigName": {
+      "value": "${AZURE_AI_SEARCH_SEMANTIC_CONFIG_NAME}"
+    },
+    "azureAISearchEndpoint": {
+      "value": "${AZURE_AI_SEARCH_ENDPOINT}"
+    },
     "enableAzureMonitorTracing": {
       "value": "${ENABLE_AZURE_MONITOR_TRACING=false}"
     },

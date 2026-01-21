@@ -32,6 +32,10 @@ param aiServicesName string = ''
 param searchServiceName string = ''
 @description('The search index name')
 param aiSearchIndexName string = ''
+@description('The search index description')
+param indexDescription string = ''
+@description('The search index semantic configuration name')
+param semanticConfigName string = ''
 @description('The Azure AI Search endpoint for existing search service')
 param azureAISearchEndpoint string = ''
 @description('The Azure Storage Account resource name. If ommited will be generated')
@@ -274,6 +278,8 @@ module api 'api.bicep' = {
     enableAzureMonitorTracing: enableAzureMonitorTracing
     azureTracingGenAIContentRecordingEnabled: azureTracingGenAIContentRecordingEnabled
     projectEndpoint: projectEndpoint
+    indexDescription: indexDescription
+    semanticConfigName: semanticConfigName
   }
 }
 

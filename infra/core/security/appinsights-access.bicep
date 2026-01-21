@@ -19,7 +19,7 @@ var monitoringMetricsContributorRole = subscriptionResourceId('Microsoft.Authori
 
 resource monitoringMetricsContributorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   scope: appInsights // Use when specifying a scope that is different than the deployment scope
-  name: guid(subscription().id, resourceGroup().id, principalId, monitoringMetricsContributorRole)
+  name: guid(subscription().id, resourceGroup().id, principalId, monitoringMetricsContributorRole, principalType)
   properties: {
     principalType: principalType
     roleDefinitionId: monitoringMetricsContributorRole
