@@ -426,7 +426,7 @@ export function AgentPreview({ agentDetails }: IAgentPreviewProps): ReactNode {
   );
 
   return (
-    <div className={styles.container}>
+    <div className={styles.container} style={{ gridTemplateRows: selectedConfig ? "auto auto 1fr" : "auto 1fr" }}>
       <div className={styles.topBar}>
         <div className={styles.leftSection}>
           {indexConfigs.length > 0 ? (
@@ -495,6 +495,24 @@ export function AgentPreview({ agentDetails }: IAgentPreviewProps): ReactNode {
           />
         </div>
       </div>
+      {selectedConfig && (
+        <div
+          style={{
+            gridColumn: "1 / -1",
+            padding: "8px 16px",
+            backgroundColor: "var(--colorNeutralBackground3)",
+            borderBottom: "1px solid var(--colorNeutralStroke1)",
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+          }}
+        >
+          <Caption1>
+            <b>Current Index:</b> {selectedConfig.index_name} |{" "}
+            <b>Semantic Configuration:</b> {selectedConfig.semantic_configuration}
+          </Caption1>
+        </div>
+      )}
       <div className={styles.content}>          <>
             {messageList.length === 0 && (
               <div className={styles.emptyChatContainer}>
@@ -516,7 +534,7 @@ export function AgentPreview({ agentDetails }: IAgentPreviewProps): ReactNode {
       </div>
 
       {/* Sources Panel */}
-      <div className={styles.sourcesContainer}>
+      <div className={styles.sourcesContainer} style={{ gridRow: selectedConfig ? 3 : 2 }}>
         <SourcesPanel
           mode={retrievalMode}
           question={currentQuestion}
