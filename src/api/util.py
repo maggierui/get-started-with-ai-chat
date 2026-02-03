@@ -49,3 +49,7 @@ class Message(pydantic.BaseModel):
 class ChatRequest(pydantic.BaseModel):
     messages: list[Message]
     use_metadata_inference: bool = False
+    index_name: Optional[str] = None
+    semantic_configuration: Optional[str] = None
+    dimensions: Optional[int] = None
+    use_metadata_inference: bool = False

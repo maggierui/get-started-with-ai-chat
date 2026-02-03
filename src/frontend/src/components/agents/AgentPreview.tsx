@@ -4,7 +4,11 @@ import {
   Button,
   Caption1,
   Title2,
+  Dropdown,
+  Option,
+  useId,
 } from "@fluentui/react-components";
+import type { OptionOnSelectData, SelectionEvents } from "@fluentui/react-components";
 import { ChatRegular, MoreHorizontalRegular } from "@fluentui/react-icons";
 
 import { AgentIcon } from "./AgentIcon";
@@ -15,6 +19,22 @@ import { IChatItem } from "./chatbot/types";
 import { SourcesPanel, ISource } from "./SourcesPanel";
 
 import styles from "./AgentPreview.module.css";
+
+interface IndexConfig {
+  index_name: string;
+  display_name: string;
+  semantic_configuration: string;
+  dimensions?: number;
+}
+
+declare global {
+  interface Window {
+    AVAILABLE_INDEXES?: IndexConfig[];
+    CURRENT_INDEX_NAME?: string;
+    CURRENT_SEMANTIC_CONFIG?: string;
+    __INDEX_INFO__?: any;
+  }
+}
 
 interface IAgent {
   id: string;
@@ -53,6 +73,16 @@ export function AgentPreview({ agentDetails }: IAgentPreviewProps): ReactNode {
   const [useMetadataInference, setUseMetadataInference] = useState(false);
   const useMetadataInferenceRef = useRef(useMetadataInference);
 
+  const indexConfigs = useMemo(() => window.AVAILABLE_INDEXES || [], []);
+  const defaultIndexName = window.CURRENT_INDEX_NAME || (indexConfigs[0]?.index_name) || "";
+  
+  // Initialize with found config or default to first one
+  const [selectedConfig, setSelectedConfig] = useState<IndexConfig | undefined>(() => 
+      indexConfigs.find(c => c.index_name === defaultIndexName) || indexConfigs[0]
+  );
+  
+  const dropdownId = useId("index-dropdown");
+
   useEffect(() => {
     useMetadataInferenceRef.current = useMetadataInference;
   }, [useMetadataInference]);
@@ -62,13 +92,21 @@ export function AgentPreview({ agentDetails }: IAgentPreviewProps): ReactNode {
   }, [useMetadataInference]);
 
   const indexInfo = useMemo(() => {
-    const info = (window as any)?.__INDEX_INFO__ || {};
-    return {
+     if (selectedConfig) {
+        return {
+          name: selectedConfig.index_name,
+          semantic: selectedConfig.semantic_configuration,
+          description: selectedConfig.display_name,
+        };
+     }
+     // Fallback if needed, though with indexConfigs populated it should be fine
+     const info = (window as any)?.__INDEX_INFO__ || {};
+     return {
       name: info.name || "",
       semantic: info.semantic || "",
       description: info.description || "",
     };
-  }, []);
+  }, [selectedConfig]);
 
 
 
@@ -112,7 +150,13 @@ export function AgentPreview({ agentDetails }: IAgentPreviewProps): ReactNode {
         content: item.content,
       }));
       const useInference = useMetadataInferenceRef.current;
-      const postData = {messages, use_metadata_inference: useInference};
+      const postData = {
+        messages, 
+        use_metadata_inference: useInference,
+        index_name: selectedConfig?.index_name,
+        semantic_configuration: selectedConfig?.semantic_configuration,
+        dimensions: selectedConfig?.dimensions,
+      };
       console.log("[ChatClient] Sending chat with metadata inference:", useInference);
       // IMPORTANT: Add credentials: 'include' if server cookies are critical
       // and if your backend is on the same domain or properly configured for cross-site cookies.
@@ -385,15 +429,50 @@ export function AgentPreview({ agentDetails }: IAgentPreviewProps): ReactNode {
     <div className={styles.container}>
       <div className={styles.topBar}>
         <div className={styles.leftSection}>
-          {messageList.length > 0 && (
-            <>
-              <AgentIcon
-                alt=""
-                iconClassName={styles.agentIcon}
-                iconName={agentDetails.metadata?.logo}
-              />
-              <Body1 className={styles.agentName}>{agentDetails.name}</Body1>
-            </>
+          {indexConfigs.length > 0 ? (
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <label htmlFor={dropdownId} style={{ fontWeight: 600 }}>
+                Index:
+              </label>
+              <Dropdown
+                aria-labelledby={dropdownId}
+                value={selectedConfig?.display_name || "Select Index"}
+                selectedOptions={
+                  selectedConfig ? [selectedConfig.index_name] : []
+                }
+                onOptionSelect={(_e: SelectionEvents, data: OptionOnSelectData) => {
+                  const cfg = indexConfigs.find(
+                    (c) => c.index_name === data.optionValue
+                  );
+                  if (cfg) {
+                    setSelectedConfig(cfg);
+                    newThread();
+                  }
+                }}
+                style={{ minWidth: "300px" }}
+              >
+                {indexConfigs.map((config) => (
+                  <Option
+                    key={config.index_name}
+                    value={config.index_name}
+                    text={config.display_name}
+                  >
+                    {config.display_name}
+                  </Option>
+                ))}
+              </Dropdown>
+            </div>
+          ) : (
+            messageList.length > 0 && (
+              <>
+                <AgentIcon
+                  alt=""
+                  iconClassName={styles.agentIcon}
+                  iconName={agentDetails.metadata?.logo}
+                />
+                <Body1 className={styles.agentName}>{agentDetails.name}</Body1>
+              </>
+            )
           )}
         </div>
         <div className={styles.rightSection}>

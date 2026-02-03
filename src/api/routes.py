@@ -56,6 +56,40 @@ logger = get_logger(
     log_to_console=True
 )
 
+INDEX_CONFIGS = [
+    {
+        "index_name": "sharepoint-before-aio",
+        "display_name": "SharePoint admin doc before AIO",
+        "semantic_configuration": "sharepoint-before-aio-semantic-configuration"
+    },
+    {
+        "index_name": "sharepoint-after-aio",
+        "display_name": "SharePoint admin doc after AIO",
+        "semantic_configuration": "sharepoint-after-aio-semantic-configuration"
+    },
+    {
+        "index_name": "m365-before-aio-no-metadata",
+        "display_name": "Microsoft 365 admin doc chunk without metadata",
+        "semantic_configuration": "m365-before-aio-no-metadata-semantic-configuration"
+    },
+    {
+        "index_name": "m365-before-aio-metadata",
+        "display_name": "Microsoft 365 admin doc chunk with metadata",
+        "semantic_configuration": "m365-before-aio-metadata-semantic-config",
+        "dimensions": 100
+    },
+    {
+        "index_name": "m365-before-aio-copilot",
+        "display_name": "M365 Copilot admin doc before AIO",
+        "semantic_configuration": "m365-before-aio-copilot-semantic-configuration"
+    },
+    {
+        "index_name": "m365-after-aio",
+        "display_name": "M365 Copilot admin doc after AIO",
+        "semantic_configuration": "m365-after-aio-semantic-configuration"
+    },
+]
+
 router = fastapi.APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).resolve().parent / "templates")
 
@@ -90,6 +124,7 @@ async def index_name(request: Request, _ = auth_dependency):
             "index_description": index_description,
             "semantic_config": semantic_config,
             "search_enabled": search_enabled,
+            "available_indexes_json": json.dumps(INDEX_CONFIGS),
         }
     )
 

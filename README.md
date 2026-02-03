@@ -22,12 +22,59 @@ This solution creates an Microsoft Foundry project and Foundry Tools. More detai
 
 Instructions are provided for deployment through GitHub Codespaces, VS Code Dev Containers, and your local development environment.
 
-### Project Workflow (what happens under the hood)
+### Project Workflow (How it Works)
 
-- Documents are downloaded from Azure Storage using the configured `AZURE_STORAGE_BLOB_PREFIX` and `AZURE_STORAGE_CONTAINER_NAME` (see `.azure/lmc-doc-chat/.env`).
-- `rebuild_index.py` generates embeddings (`embeddings.csv`), creating `chunk_id` per chunk, and uploads them to Azure AI Search.
-- The search index uses vector + semantic search; the chat service queries it via `SearchIndexManager` to retrieve context for answers. The app now reads the index description and semantic configuration directly from environment variables (`INDEX_DESCRIPTION`, `AZURE_AI_SEARCH_SEMANTIC_CONFIG_NAME`, and `AZURE_AI_SEARCH_ENDPOINT`) so the header and semantic ranking always match the deployed search service.
-- The web chat app calls the API, which embeds the user question, runs hybrid search against the index, and returns responses with retrieved sources.
+The solution operates in two main phases: **Data Ingestion** and **Interactive Chat**.
+
+**1. Data Ingestion (Indexing)**
+The chat app supports indexes created either via the local script or the Azure Portal ("Import data"):
+
+*   **Local Script (`rebuild_index.py`)**:
+    *   **Process**: Downloads docs from Azure Storage, splits them into chunks, and generates vector embeddings.
+    *   **Metadata**: Automatically extracts and attaches metadata fields such as `ms.author`, `ms.service`, `customer-intent`, `description`, and `ms.collection` to each chunk.
+    *   **Index**: Pushes these chunks (text + vectors + metadata) to the Azure AI Search index.
+
+*   **Azure Portal**:
+    *   You can use the "Import data (Import and vectorize data)" wizard in the Azure AI Search portal.
+    *   **Configuration**: Regardless of the method used, the index's **Semantic Configuration** must be updated to include `header_1`, `header_2`, and `header_3` in the prioritized content fields. This ensures the semantic reranker correctly weighs document structure.
+
+The index schema is defined to support hybrid search (keywords + vectors) and semantic ranking.
+
+**2. Interactive Chat (Retrieval-Augmented Generation)**
+When a user asks a question via the web interface:
+1.  **API Call**: The frontend sends the query to the `/chat` endpoint in `src/api/routes.py`.
+2.  **Metadata Inference (Optional)**: If enabled, `metadata_inference.py` uses an LLM to analyze the question and extract filters (like Topic or Audience).
+3.  **Hybrid Search**: `SearchIndexManager` executes a search against Azure AI Search, combining:
+    *   Vector search (semantic meaning).
+    *   Keyword search (exact matches).
+    *   Semantic ranking (re-ranking top results for relevance).
+4.  **Generation**: The top retrieved document chunks are fed into the GPT-4o-mini model as context. The model generates a grounded response with citations.
+
+### Project Structure
+
+Here is a guide to the key files and directories in this repository:
+
+**Root Directory (Scripts & Config)**
+*   `rebuild_index.py`: The primary script for ingesting data. It downloads blobs, generates embeddings, and populates the search index.
+*   `check_index.py`: A diagnostic script to verify if the search index exists and inspect its schema/fields.
+*   `create_empty_index.py`: Creates the search index schema without populating data. Useful for testing infrastructure setup.
+*   `delete_index.py`: Deletes the specified search index. Use with caution.
+*   `update_index_profile.py`: Updates the scoring profile of the index (e.g., boosting specific metadata fields).
+*   `app.yaml`: Azure Container Apps configuration file.
+*   `azure.yaml`: Azure Developer CLI (azd) configuration.
+
+**Source Code (`src/api/`)**
+*   `main.py`: The entry point for the FastAPI backend. It initializes the application, identity credentials, and telemetry.
+*   `routes.py`: Defines the API endpoints. The core logic handles the `/chat` POST request, managing the conversation flow between the user, the search index, and the LLM.
+*   `search_index_manager.py`: The abstraction layer for Azure AI Search. It handles:
+    *   Index creation (defining fields, vectors, and semantic configurations).
+    *   Query execution (hybrid search logic).
+    *   Embedding generation calls.
+*   `metadata_inference.py`: Uses a chat model to infer metadata (like `ms.topic`) from natural language queries to potentially filter or boost search results.
+
+**Infrastructure (`infra/`)**
+*   `main.bicep`: The master Bicep template that orchestrates the deployment of all Azure resources (AI Project, Search Service, Container Apps, etc.).
+*   `api.bicep`: Defines the specific configuration for the backend Container App, including environment variables and identity validation.
 
 ### Solution Architecture
 

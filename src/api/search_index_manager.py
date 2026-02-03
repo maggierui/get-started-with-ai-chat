@@ -91,6 +91,7 @@ class SearchIndexManager:
         self._available_fields: Optional[set[str]] = None
         self._available_metadata_fields: Optional[list[tuple[str, str, bool]]] = None
         self._metadata_inference = MetadataInference(chat_client, chat_model) if chat_client and chat_model else None
+        self._index_clients: dict[str, SearchClient] = {}
 
     def _get_client(self):
         """Get search client if it is absent."""
@@ -98,6 +99,23 @@ class SearchIndexManager:
             self._client = SearchClient(
                 endpoint=self._endpoint, index_name=self._index.name, credential=self._credential)
         return self._client
+
+    def _get_client_by_name(self, index_name: str) -> SearchClient:
+        if index_name == self._index_name:
+            if self._client:
+                return self._client
+            # Fallback for default index if ensure_index_created wasn't called or client strictly needed by name
+            if self._index:
+                 # Logic in _get_client uses self._index.name
+                 return self._get_client()
+            # If self._index is None, we can still create a client by name
+        
+        if index_name in self._index_clients:
+            return self._index_clients[index_name]
+            
+        client = SearchClient(endpoint=self._endpoint, index_name=index_name, credential=self._credential)
+        self._index_clients[index_name] = client
+        return client
 
     def _refresh_available_fields(self) -> None:
         """Cache available fields for the currently loaded index."""
@@ -147,8 +165,12 @@ class SearchIndexManager:
         :param message: The customer question.
         :return: Tuple of (context string, list of source documents with metadata, retrieval mode).
         """
-        self._raise_if_no_index()
-        self._refresh_available_fields()
+        target_index_name = message.index_name or self._index_name
+        target_semantic_config = message.semantic_configuration or self._semantic_config_name
+        
+        if target_index_name == self._index_name:
+            self._raise_if_no_index()
+            self._refresh_available_fields()
         
         retrieval_mode = "natural"
         inferred_metadata = {}
@@ -180,9 +202,11 @@ class SearchIndexManager:
             if scoring_parameters:
                 print(f"Applying scoring profile: {scoring_profile} with parameters: {scoring_parameters}")
 
+        target_dimensions = message.dimensions or self._dimensions
+
         embedded_question = (await self._embeddings_client.embed(
             input=message.messages[-1].content,
-            dimensions=self._dimensions,
+            dimensions=target_dimensions,
             model=self._model
         ))['data'][0]['embedding']
         
@@ -212,11 +236,12 @@ class SearchIndexManager:
             search_params["scoring_parameters"] = scoring_parameters
         
         # Only add semantic parameters if semantic config name is provided
-        if self._semantic_config_name:
+        if target_semantic_config:
             search_params["query_type"] = QueryType.SEMANTIC
-            search_params["semantic_configuration_name"] = self._semantic_config_name
+            search_params["semantic_configuration_name"] = target_semantic_config
         
-        response = await self._get_client().search(**search_params)
+        client = self._get_client_by_name(target_index_name)
+        response = await client.search(**search_params)
         
         sources = []
         context_chunks = []

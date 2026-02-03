@@ -6,47 +6,13 @@
     <meta name="description" content="">
     <title>Get Started with AI Agents</title>
     <link href="/static/react/assets/main-react-app.css " rel="stylesheet" type="text/css">
-    <style>
-        .index-banner {
-            font-family: system-ui, -apple-system, Segoe UI, sans-serif;
-            background: #0f172a;
-            color: #e2e8f0;
-            padding: 10px 16px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            border-bottom: 1px solid #1f2937;
-        }
-        .index-banner strong { color: #cbd5e1; }
-        .index-banner .pill {
-            display: inline-flex;
-            align-items: center;
-            padding: 4px 8px;
-            border-radius: 999px;
-            background: #1e293b;
-            color: #cbd5e1;
-            font-size: 12px;
-            border: 1px solid #334155;
-        }
-        .index-banner .desc {
-            color: #94a3b8;
-            font-size: 13px;
-            display: inline-flex;
-            gap: 6px;
-            align-items: center;
-        }
-        .index-banner .desc-label {
-            color: #cbd5e1;
-            font-weight: 600;
-        }
-    </style>
 </head>
 <body style="margin: 0;">
-    <div class="index-banner">
-        <div><strong>Index:</strong> {{ index_name }}</div>
-        {% if semantic_config %}<div class="pill">Semantic: {{ semantic_config }}</div>{% endif %}
-        <div class="desc"><span class="desc-label">Description:</span> {{ index_description }}</div>
-    </div>
+    <script>
+        window.AVAILABLE_INDEXES = {{ available_indexes_json | safe }};
+        window.CURRENT_INDEX_NAME = "{{ index_name }}";
+        window.CURRENT_SEMANTIC_CONFIG = "{{ semantic_config }}";
+    </script>
     <div id="react-root"></div>
     <!-- Load React app with fixed filename -->
     <script>
