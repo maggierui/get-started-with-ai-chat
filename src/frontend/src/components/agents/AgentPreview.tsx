@@ -21,6 +21,7 @@ import { SourcesPanel, ISource } from "./SourcesPanel";
 import styles from "./AgentPreview.module.css";
 
 interface IndexConfig {
+  id?: string;
   index_name: string;
   display_name: string;
   semantic_configuration: string;
@@ -438,11 +439,11 @@ export function AgentPreview({ agentDetails }: IAgentPreviewProps): ReactNode {
                 aria-labelledby={dropdownId}
                 value={selectedConfig?.display_name || "Select Index"}
                 selectedOptions={
-                  selectedConfig ? [selectedConfig.index_name] : []
+                  selectedConfig ? [selectedConfig.id || selectedConfig.index_name] : []
                 }
                 onOptionSelect={(_e: SelectionEvents, data: OptionOnSelectData) => {
                   const cfg = indexConfigs.find(
-                    (c) => c.index_name === data.optionValue
+                    (c) => (c.id || c.index_name) === data.optionValue
                   );
                   if (cfg) {
                     setSelectedConfig(cfg);
@@ -453,8 +454,8 @@ export function AgentPreview({ agentDetails }: IAgentPreviewProps): ReactNode {
               >
                 {indexConfigs.map((config) => (
                   <Option
-                    key={config.index_name}
-                    value={config.index_name}
+                    key={config.id || config.index_name}
+                    value={config.id || config.index_name}
                     text={config.display_name}
                   >
                     {config.display_name}

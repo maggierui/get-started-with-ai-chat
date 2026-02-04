@@ -166,7 +166,9 @@ class SearchIndexManager:
         :return: Tuple of (context string, list of source documents with metadata, retrieval mode).
         """
         target_index_name = message.index_name or self._index_name
-        target_semantic_config = message.semantic_configuration or self._semantic_config_name
+        target_semantic_config = message.semantic_configuration
+        if target_semantic_config is None:
+            target_semantic_config = self._semantic_config_name
         
         if target_index_name == self._index_name:
             self._raise_if_no_index()
