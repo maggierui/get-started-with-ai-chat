@@ -70,12 +70,6 @@ INDEX_CONFIGS = [
         "semantic_configuration": "sharepoint-after-aio-semantic-configuration"
     },
     {
-        "id": "sharepoint-after-aio-0202-semantic",
-        "index_name": "sharepoint-after-aio-0202",
-        "display_name": "SharePoint admin doc after AIO 0202",
-        "semantic_configuration": "sharepoint-after-aio-0202-semantic-configuration"
-    },
-    {
         "id": "m365-before-aio-no-metadata",
         "index_name": "m365-before-aio-no-metadata",
         "display_name": "Microsoft 365 admin doc chunk without metadata",
@@ -99,31 +93,7 @@ INDEX_CONFIGS = [
         "index_name": "m365-after-aio",
         "display_name": "M365 Copilot admin doc after AIO",
         "semantic_configuration": "m365-after-aio-semantic-configuration"
-    },
-    {
-        "id": "sharepoint-before-aio-large",
-        "index_name": "sharepoint-before-aio-large",
-        "display_name": "SharePoint admin doc before AIO Large",
-        "semantic_configuration": "sharepoint-before-aio-large-semantic-configuration"
-    },
-    {
-        "id": "sharepoint-after-aio-large",
-        "index_name": "sharepoint-after-aio-large",
-        "display_name": "SharePoint admin doc after AIO Large",
-        "semantic_configuration": "sharepoint-after-aio-large-semantic-configuration"
-    },
-    {
-        "id": "m365-copilot-before-aio-large",
-        "index_name": "m365-copilot-before-aio-large",
-        "display_name": "M365 Copilot admin doc before AIO Large",
-        "semantic_configuration": "m365-copilot-before-aio-large-semantic-configuration"
-    },
-    {
-        "id": "m365-copilot-after-aio-large",
-        "index_name": "m365-copilot-after-aio-large",
-        "display_name": "M365 Copilot admin doc after AIO Large",
-        "semantic_configuration": "m365-copilot-after-aio-large-semantic-configuration"
-    },
+    }
 ]
 
 router = fastapi.APIRouter()
